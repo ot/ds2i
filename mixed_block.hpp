@@ -27,6 +27,7 @@ namespace ds2i {
 
             static const size_t block_types = 3;
             static const uint64_t block_size = 128;
+            static const uint64_t overflow = 0;
 
             static void encode(uint32_t const*, uint32_t,
                                size_t, std::vector<uint8_t>&)
