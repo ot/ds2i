@@ -9,8 +9,7 @@
 template <typename BlockCodec>
 void test_block_codec()
 {
-    // std::vector<size_t> sizes = {1, 16, BlockCodec::block_size - 1, BlockCodec::block_size};
-    std::vector<size_t> sizes = {BlockCodec::block_size};
+    std::vector<size_t> sizes = {1, 16, BlockCodec::block_size - 1, BlockCodec::block_size};
     for(size_t mag=1;mag<25;mag++) {
         for (auto size: sizes) {
             std::vector<uint32_t> values(size);
