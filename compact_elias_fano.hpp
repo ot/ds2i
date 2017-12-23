@@ -202,6 +202,7 @@ namespace ds2i {
                             val = next_value();
                         } else {
                             val = m_of.universe;
+                            m_position = size();
                             break;
                         }
                     } while (val < lower_bound);

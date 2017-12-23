@@ -175,6 +175,7 @@ namespace ds2i {
                             val = he.next() - m_of.bits_offset;
                         } else {
                             val = m_of.universe;
+                            m_position = size();
                             break;
                         }
                     } while (val < lower_bound);
