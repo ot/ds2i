@@ -25,13 +25,13 @@ void test_block_codec()
                 std::vector<uint8_t> encoded;
                 BlockCodec::encode(values.data(), sum_of_values, values.size(), encoded);
 
-                std::vector<uint32_t> decoded(values.size());
+                std::vector<uint32_t> decoded(values.size() + BlockCodec::overflow);
                 uint8_t const* out = BlockCodec::decode(encoded.data(), decoded.data(),
                                                         sum_of_values, values.size());
 
                 BOOST_REQUIRE_EQUAL(encoded.size(), out - encoded.data());
                 BOOST_REQUIRE_EQUAL_COLLECTIONS(values.begin(), values.end(),
-                                                decoded.begin(), decoded.end());
+                                                decoded.begin(), decoded.begin()+ values.size());
             }
         }
     }

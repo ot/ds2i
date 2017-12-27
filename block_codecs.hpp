@@ -316,7 +316,7 @@ struct varint_G8IU_block {
 
 struct qmx_block {
   static const uint64_t block_size = 128;
-  static const uint64_t overflow = 512;
+  static const uint64_t overflow = 512; // qmx can potentially overshoot...
   static void encode(uint32_t const *in, uint32_t sum_of_values, size_t n,
                      std::vector<uint8_t> &out) {
         assert(n <= block_size);
@@ -325,7 +325,7 @@ struct qmx_block {
             return;
         }
         thread_local QMX::codec<block_size> qmx_codec;
-        thread_local std::vector<uint8_t> buf(512 + 2 * 4 * block_size);
+        thread_local std::vector<uint8_t> buf( (overflow*4) + 2 * 4 * block_size);
         size_t out_len = buf.size();
         out_len = qmx_codec.encode(buf.data(),in);
         TightVariableByte::encode_single(out_len, out);
