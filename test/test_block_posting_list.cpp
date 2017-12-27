@@ -95,6 +95,7 @@ void test_block_posting_list_reordering()
 
 BOOST_AUTO_TEST_CASE(block_posting_list)
 {
+    test_block_posting_list<ds2i::qmx_block>();
     test_block_posting_list<ds2i::optpfor_block>();
     test_block_posting_list<ds2i::varint_G8IU_block>();
     test_block_posting_list<ds2i::interpolative_block>();
@@ -103,4 +104,5 @@ BOOST_AUTO_TEST_CASE(block_posting_list)
 BOOST_AUTO_TEST_CASE(block_posting_list_reordering)
 {
     test_block_posting_list_reordering<ds2i::optpfor_block>();
+    test_block_posting_list_reordering<ds2i::qmx_block>();
 }

@@ -61,6 +61,7 @@ void test_block_freq_index()
 
 BOOST_AUTO_TEST_CASE(block_freq_index)
 {
+    test_block_freq_index<ds2i::qmx_block>();
     test_block_freq_index<ds2i::optpfor_block>();
     test_block_freq_index<ds2i::varint_G8IU_block>();
     test_block_freq_index<ds2i::interpolative_block>();

@@ -34,8 +34,9 @@ namespace ds2i {
     typedef block_freq_index<ds2i::optpfor_block> block_optpfor_index;
     typedef block_freq_index<ds2i::varint_G8IU_block> block_varint_index;
     typedef block_freq_index<ds2i::interpolative_block> block_interpolative_index;
+    typedef block_freq_index<ds2i::qmx_block> block_qmx_index;
     typedef block_freq_index<ds2i::mixed_block> block_mixed_index;
 }
 
-#define DS2I_INDEX_TYPES (ef)(single)(uniform)(opt)(block_optpfor)(block_varint)(block_interpolative)(block_mixed)
-#define DS2I_BLOCK_INDEX_TYPES (block_optpfor)(block_varint)(block_interpolative)(block_mixed)
+#define DS2I_INDEX_TYPES (ef)(single)(uniform)(opt)(block_optpfor)(block_varint)(block_interpolative)(block_mixed)(block_qmx)
+#define DS2I_BLOCK_INDEX_TYPES (block_optpfor)(block_varint)(block_interpolative)(block_qmx)(block_mixed)

@@ -97,8 +97,8 @@ namespace ds2i {
                     // std::cout << "OPEN\t" << m_term_id << "\t" << m_blocks << "\n";
                     m_block_profile = block_profiler::open_list(term_id, m_blocks);
                 }
-                m_docs_buf.resize(BlockCodec::block_size);
-                m_freqs_buf.resize(BlockCodec::block_size);
+                m_docs_buf.resize(BlockCodec::block_size + BlockCodec::overflow);
+                m_freqs_buf.resize(BlockCodec::block_size + BlockCodec::overflow);
                 reset();
             }
 
@@ -191,7 +191,7 @@ namespace ds2i {
                 uint64_t bytes = 0;
                 uint8_t const* ptr = m_blocks_data;
                 static const uint64_t block_size = BlockCodec::block_size;
-                std::vector<uint32_t> buf(block_size);
+                std::vector<uint32_t> buf(block_size + BlockCodec::overflow);
                 for (size_t b = 0; b < m_blocks; ++b) {
                     uint32_t cur_block_size =
                         ((b + 1) * block_size <= size())
@@ -254,7 +254,7 @@ namespace ds2i {
 
                 uint8_t const* ptr = m_blocks_data;
                 static const uint64_t block_size = BlockCodec::block_size;
-                std::vector<uint32_t> buf(block_size);
+                std::vector<uint32_t> buf(block_size + BlockCodec::overflow);
                 for (size_t b = 0; b < m_blocks; ++b) {
                     blocks.emplace_back();
                     uint32_t cur_block_size =
