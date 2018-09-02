@@ -79,12 +79,6 @@ forward_index forward_index::from_binary_collection(const std::string &input_bas
 
     uint32_t tid = 0;
 
-    // tqdm::Params params;
-    // params.desc="create_forward_index";
-    // params.leave = true;
-    // params.dynamic_ncols = true;
-    // for (auto &&it : tqdm::tqdm(++coll.begin(), coll.end(), params)) {
-
     for (auto it = ++coll.begin(); it != coll.end(); ++it) {
         for (const auto &d : *it) {
             fwd[d].id = d;
@@ -133,6 +127,10 @@ struct doc_ref {
             return std::make_pair(lhs.range(), -lhs.gain()) <
                    std::make_pair(rhs.range(), -rhs.gain());
         };
+    }
+
+    static auto by_gain() {
+        return [](const doc_ref &lhs, const doc_ref &rhs) { return lhs.gain() > rhs.gain(); };
     }
 };
 
@@ -189,8 +187,7 @@ auto get_mapping = [](const auto &collection)
     std::vector<uint32_t> mapping(collection.size(), 0u);
     size_t p = 0;
     for (const auto &i : collection) {
-        mapping[i.id()] = p;
-        ++p;
+        mapping[i.id()] = p++;
     }
     return mapping;
 };
@@ -271,14 +268,14 @@ void swap(std::vector<document_partition<Iterator>> &partitions) {
         for (; left != partition.left.end() && right != partition.right.end(); ++left, ++right) {
             if (left->gain() + right->gain() <= 0) { break; }
             std::iter_swap(left, right);
-            for (auto &term : left->terms()) {
-                partition.degrees.left[term]--;
-                partition.degrees.right[term]++;
-            }
-            for (auto &term : right->terms()) {
-                partition.degrees.left[term]++;
-                partition.degrees.right[term]--;
-            }
+            //for (auto &term : left->terms()) {
+            //    partition.degrees.left[term]--;
+            //    partition.degrees.right[term]++;
+            //}
+            //for (auto &term : right->terms()) {
+            //    partition.degrees.left[term]++;
+            //    partition.degrees.right[term]--;
+            //}
         }
     }
 }
@@ -307,12 +304,13 @@ template <class Iterator>
 std::vector<document_partition<Iterator>> process_level(
     std::vector<document_partition<Iterator>> &partitions)
 {
-    compute_degrees(partitions);
     for (int iteration = 0; iteration < 20; ++iteration) {
+        compute_degrees(partitions);
         compute_gains(partitions);
-        std::sort(partitions.front().left.begin(),
-                  partitions.back().right.end(),
-                  doc_ref::by_range_gain());
+        for (auto& partition: partitions) {
+            std::sort(partition.left.begin(), partition.left.end(), doc_ref::by_gain());
+            std::sort(partition.right.begin(), partition.right.end(), doc_ref::by_gain());
+        }
         swap(partitions);
     }
     return next_level(partitions);

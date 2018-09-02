@@ -1,5 +1,8 @@
 #include "CLI/CLI.hpp"
 
+#include <pstl/algorithm>
+#include <pstl/execution>
+
 #include "recursive_graph_bisection.hpp"
 
 int main(int argc, char const *argv[]) {
@@ -17,6 +20,7 @@ int main(int argc, char const *argv[]) {
     using namespace ds2i;
 
     bp::forward_index fwd = bp::forward_index::from_binary_collection(input_basename);
+
     std::vector<doc_ref> documents;
     std::transform(
         fwd.begin(), fwd.end(), std::back_inserter(documents), [](auto &d) { return doc_ref(&d); });
@@ -24,6 +28,8 @@ int main(int argc, char const *argv[]) {
         0, documents.begin(), documents.end(), fwd.term_count()};
     recursive_graph_bisection(initial_range, 9);
     auto mapping = get_mapping(documents);
+    //std::vector<uint32_t> mapping(fwd.size(), 0u);
+    //std::iota(mapping.begin(), mapping.end(), 0u);
     reorder_inverted_index(input_basename, output_basename, mapping);
 
     return 0;
