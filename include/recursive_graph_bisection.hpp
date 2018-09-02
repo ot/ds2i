@@ -6,7 +6,7 @@
 
 #include "binary_freq_collection.hpp"
 #include "binary_collection.hpp"
-#include "codec/varint.hpp"
+#include "codec/block_codecs.hpp"
 
 namespace ds2i {
 
@@ -40,7 +40,8 @@ struct doc_entry {
     {
         std::vector<uint32_t> terms;
         terms.resize(terms_compressed.size() * 5);
-        auto n = Varint::decode(terms_compressed.data(), terms.data(), terms_compressed.size());
+        size_t n = 0;
+        TightVariableByte::decode(terms_compressed.data(), terms.data(), terms_compressed.size(), n);
         terms.resize(n);
         terms.shrink_to_fit();
         return terms;
@@ -84,7 +85,7 @@ forward_index forward_index::from_binary_collection(const std::string &input_bas
             fwd[d].id = d;
             if (it->size() >= MIN_LEN) {
                 // TODO: d-gap
-                Varint::encode_single(tid, fwd[d].terms_compressed);
+                TightVariableByte::encode_single(tid, fwd[d].terms_compressed);
             }
         }
         ++tid;

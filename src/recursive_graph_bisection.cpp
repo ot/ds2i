@@ -1,7 +1,5 @@
 #include "CLI/CLI.hpp"
 
-#include <pstl/algorithm>
-#include <pstl/execution>
 
 #include "recursive_graph_bisection.hpp"
 
@@ -28,9 +26,6 @@ int main(int argc, char const *argv[]) {
         0, documents.begin(), documents.end(), fwd.term_count()};
     recursive_graph_bisection(initial_range, 9);
     auto mapping = get_mapping(documents);
-    //std::vector<uint32_t> mapping(fwd.size(), 0u);
-    //std::iota(mapping.begin(), mapping.end(), 0u);
     reorder_inverted_index(input_basename, output_basename, mapping);
-
     return 0;
 }
