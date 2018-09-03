@@ -302,44 +302,31 @@ void recursive_graph_bisection(document_range<Iterator> documents, int depth, pr
 }
 
 template <class Iterator>
-class recursive_graph_bisection_task : public tbb::task {
-   public:
-    recursive_graph_bisection_task(document_range<Iterator> documents, int depth, progress &p)
-        : m_documents(documents), m_depth(depth), m_progress(p) {}
-    task *execute() override {
-        auto partition = m_documents.split();
+struct recursive_graph_bisection_f {
+    recursive_graph_bisection_f(document_range<Iterator> documents, int depth, progress &p)
+        : documents(documents), depth(depth), p(p) {}
+    void operator()() const {
+        auto partition = documents.split();
         process_partition(partition);
-        m_progress.update_and_print(m_documents.size());
-        if (m_depth > 1) {
-            if (m_documents.size() < PARALLEL_THRESHOLD) {
-                recursive_graph_bisection(partition.left, m_depth - 1, m_progress);
-                recursive_graph_bisection(partition.right, m_depth - 1, m_progress);
-                return NULL;
-            }
-            recursive_graph_bisection_task<Iterator> &left_task =
-                *new (allocate_child()) recursive_graph_bisection_task<Iterator>(
-                    partition.left, m_depth - 1, m_progress);
-            recursive_graph_bisection_task<Iterator> &right_task =
-                *new (allocate_child()) recursive_graph_bisection_task<Iterator>(
-                    partition.right, m_depth - 1, m_progress);
-            set_ref_count(3);
-            spawn(left_task);
-            spawn_and_wait_for_all(right_task);
+        p.update_and_print(documents.size());
+        if (depth > 1) {
+            recursive_graph_bisection_f<Iterator> left(partition.left, depth - 1, p);
+            recursive_graph_bisection_f<Iterator> right(partition.right, depth - 1, p);
+            tbb::parallel_invoke(left, right);
         }
-        return NULL;
     }
 
-   private:
-    document_range<Iterator> m_documents;
-    int                      m_depth;
-    progress &               m_progress;
+    document_range<Iterator> documents;
+    int                      depth;
+    progress &               p;
+
 };
 
 template <class Iterator>
-void recursive_graph_bisection_mt(document_range<Iterator> documents, int depth, progress &p) {
-    recursive_graph_bisection_task<Iterator> &task = *new (
-        tbb::task::allocate_root()) recursive_graph_bisection_task<Iterator>(documents, depth, p);
-    tbb::task::spawn_root_and_wait(task);
+void recursive_graph_bisection_mt(document_range<Iterator> documents, int depth, progress &p)
+{
+    recursive_graph_bisection_f<Iterator> root(documents, depth, p);
+    root();
 }
 
 } // namespace ds2i
