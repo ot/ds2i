@@ -115,7 +115,7 @@ namespace ds2i {
         auto num_docs = sizes.size();
         std::vector<uint32_t> new_sizes(num_docs);
         for (size_t i = 0; i < num_docs; ++i) {
-            new_sizes[i] = sizes.begin()[mapping[i]];
+            new_sizes[mapping[i]] = sizes.begin()[i];
         }
 
         std::ofstream output_sizes(output_basename + ".sizes");

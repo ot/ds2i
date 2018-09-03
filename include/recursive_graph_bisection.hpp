@@ -271,28 +271,10 @@ void swap(document_partition<Iterator> &partition) {
 }
 
 template <class Iterator>
-std::vector<document_partition<Iterator>> next_level(
-    const std::vector<document_partition<Iterator>> &partitions)
+void recursive_graph_bisection(document_range<Iterator> documents, int depth)
 {
-    std::vector<document_partition<Iterator>> res;
-    for (const auto &partition : partitions) {
-        res.push_back(partition.left.split());
-        res.push_back(partition.right.split());
-    }
-    return res;
-}
-
-template <class Iterator>
-void assign_range_ids(std::vector<document_partition<Iterator>> &partitions) {
-    for (auto &partition : partitions) {
-        partition.left.update_range_ids();
-        partition.right.update_range_ids();
-    }
-}
-
-template <class Iterator>
-void process_level(document_partition<Iterator> partition, int depth) {
-    for (int iteration = 0; iteration < 20; ++iteration) {
+     auto partition = documents.split();
+     for (int iteration = 0; iteration < 20; ++iteration) {
         compute_degrees(partition);
         compute_gains(partition);
         std::sort(partition.left.begin(), partition.left.end(), doc_ref::by_gain());
@@ -300,65 +282,9 @@ void process_level(document_partition<Iterator> partition, int depth) {
         swap(partition);
     }
     if (depth > 1) {
-        process_level(partition.left.split(), depth - 1);
-        process_level(partition.right.split(), depth - 1);
+        recursive_graph_bisection(partition.left, depth - 1);
+        recursive_graph_bisection(partition.right, depth - 1);
     }
-}
-
-template <class Iterator>
-void recursive_graph_bisection(document_range<Iterator> documents, int depth)
-{
-    process_level(documents.split(), depth);
-}
-
-void reorder_inverted_index(const std::string &          input_basename,
-                            const std::string &          output_basename,
-                            const std::vector<uint32_t> &mapping) {
-    std::ofstream output_mapping(output_basename + ".mapping");
-    emit(output_mapping, mapping.data(), mapping.size());
-
-
-    binary_collection input_sizes((input_basename + ".sizes").c_str());
-    auto sizes = *input_sizes.begin();
-
-    auto num_docs = sizes.size();
-    std::vector<uint32_t> new_sizes(num_docs);
-    for (size_t i = 0; i < num_docs; ++i) {
-        new_sizes[i] = sizes.begin()[mapping[i]];
-    }
-
-    std::ofstream output_sizes(output_basename + ".sizes");
-    emit(output_sizes, sizes.size());
-    emit(output_sizes, new_sizes.data(), num_docs);
-
-
-    std::ofstream output_docs(output_basename + ".docs");
-    std::ofstream output_freqs(output_basename + ".freqs");
-    emit(output_docs, 1);
-    emit(output_docs, mapping.size());
-
-    binary_freq_collection input(input_basename.c_str());
-
-    std::vector<std::pair<uint32_t, uint32_t>> pl;
-    for (const auto& seq: input) {
-
-        for (size_t i = 0; i < seq.docs.size(); ++i) {
-            pl.emplace_back(mapping[seq.docs.begin()[i]],
-                            seq.freqs.begin()[i]);
-        }
-
-        std::sort(pl.begin(), pl.end());
-
-        emit(output_docs, pl.size());
-        emit(output_freqs, pl.size());
-
-        for (const auto& posting: pl) {
-            emit(output_docs, posting.first);
-            emit(output_freqs, posting.second);
-        }
-        pl.clear();
-    }
-
 }
 
 } // namespace ds2i

@@ -74,4 +74,5 @@ add_executable(recursive_graph_bisection recursive_graph_bisection.cpp)
 target_link_libraries(recursive_graph_bisection
   ${Boost_LIBRARIES}
   CLI11
+  QMX
   )
