@@ -61,7 +61,6 @@ include_directories(${DS2I_SOURCE_DIR}/external
 		    ${DS2I_SOURCE_DIR}/include
 		    )
 
-find_package(TBB REQUIRED)
 add_subdirectory(src)
 
 enable_testing()

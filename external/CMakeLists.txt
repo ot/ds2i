@@ -38,5 +38,10 @@ add_library(simdcomp STATIC simdcomp/src/simdbitpacking.c
                             simdcomp/src/simdcomputil.c
 )
 
+list(APPEND CMAKE_MODULE_PATH tbb/cmake)
+include(tbb/cmake/TBBGet.cmake)
+tbb_get(TBB_ROOT tbb_root CONFIG_DIR TBB_DIR)
+find_package(TBB REQUIRED)
+
 add_library(ParallelSTL INTERFACE)
 target_include_directories(ParallelSTL INTERFACE parallelstl/include)
