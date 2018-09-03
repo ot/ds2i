@@ -37,3 +37,6 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=native")
 add_library(simdcomp STATIC simdcomp/src/simdbitpacking.c
                             simdcomp/src/simdcomputil.c
 )
+
+add_library(ParallelSTL INTERFACE)
+target_include_directories(ParallelSTL INTERFACE parallelstl/include)

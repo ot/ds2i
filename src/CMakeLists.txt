@@ -77,4 +77,5 @@ target_link_libraries(recursive_graph_bisection
   CLI11
   QMX
   tbb
+  ParallelSTL
   )
