@@ -7,18 +7,9 @@
 #include "binary_freq_collection.hpp"
 #include "binary_collection.hpp"
 #include "codec/block_codecs.hpp"
+#include "util/index_build_utils.hpp"
 
 namespace ds2i {
-
-void emit(std::ostream& os, const uint32_t* vals, size_t n)
-{
-    os.write(reinterpret_cast<const char*>(vals), sizeof(*vals) * n);
-}
-
-void emit(std::ostream& os, uint32_t val)
-{
-    emit(os, &val, 1);
-}
 
 constexpr int MIN_LEN = 1;
 
