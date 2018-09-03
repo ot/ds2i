@@ -242,42 +242,40 @@ void compute_move_gains(Iter                       begin,
 }
 
 template <class Iterator>
-void compute_gains(std::vector<document_partition<Iterator>> &partitions) {
-    for (auto& partition: partitions) {
-        auto n1 = partition.left.size();
-        auto n2 = partition.right.size();
-        compute_move_gains(partition.left.begin(),
-                           partition.left.end(),
-                           n1,
-                           n2,
-                           partition.degrees.left,
-                           partition.degrees.right);
-        compute_move_gains(partition.right.begin(),
-                           partition.right.end(),
-                           n2,
-                           n1,
-                           partition.degrees.right,
-                           partition.degrees.left);
-    }
+void compute_gains(document_partition<Iterator> &partition) {
+    auto n1 = partition.left.size();
+    auto n2 = partition.right.size();
+    compute_move_gains(partition.left.begin(),
+                       partition.left.end(),
+                       n1,
+                       n2,
+                       partition.degrees.left,
+                       partition.degrees.right);
+    compute_move_gains(partition.right.begin(),
+                       partition.right.end(),
+                       n2,
+                       n1,
+                       partition.degrees.right,
+                       partition.degrees.left);
 }
 
 template <class Iterator>
-void swap(std::vector<document_partition<Iterator>> &partitions) {
-    for (auto &partition : partitions) {
-        auto left = partition.left.begin();
-        auto right = partition.right.begin();
-        for (; left != partition.left.end() && right != partition.right.end(); ++left, ++right) {
-            if (left->gain() + right->gain() <= 0) { break; }
-            std::iter_swap(left, right);
-            //for (auto &term : left->terms()) {
-            //    partition.degrees.left[term]--;
-            //    partition.degrees.right[term]++;
-            //}
-            //for (auto &term : right->terms()) {
-            //    partition.degrees.left[term]++;
-            //    partition.degrees.right[term]--;
-            //}
+void swap(document_partition<Iterator> &partition) {
+    auto left  = partition.left.begin();
+    auto right = partition.right.begin();
+    for (; left != partition.left.end() && right != partition.right.end(); ++left, ++right) {
+        if (left->gain() + right->gain() <= 0) {
+            break;
         }
+        std::iter_swap(left, right);
+        // for (auto &term : left->terms()) {
+        //    partition.degrees.left[term]--;
+        //    partition.degrees.right[term]++;
+        //}
+        // for (auto &term : right->terms()) {
+        //    partition.degrees.left[term]++;
+        //    partition.degrees.right[term]--;
+        //}
     }
 }
 
@@ -302,28 +300,24 @@ void assign_range_ids(std::vector<document_partition<Iterator>> &partitions) {
 }
 
 template <class Iterator>
-std::vector<document_partition<Iterator>> process_level(
-    std::vector<document_partition<Iterator>> &partitions)
-{
+void process_level(document_partition<Iterator> partition, int depth) {
     for (int iteration = 0; iteration < 20; ++iteration) {
-        compute_degrees(partitions);
-        compute_gains(partitions);
-        for (auto& partition: partitions) {
-            std::sort(partition.left.begin(), partition.left.end(), doc_ref::by_gain());
-            std::sort(partition.right.begin(), partition.right.end(), doc_ref::by_gain());
-        }
-        swap(partitions);
+        compute_degrees(partition);
+        compute_gains(partition);
+        std::sort(partition.left.begin(), partition.left.end(), doc_ref::by_gain());
+        std::sort(partition.right.begin(), partition.right.end(), doc_ref::by_gain());
+        swap(partition);
     }
-    return next_level(partitions);
+    if (depth > 1) {
+        process_level(partition.left.split(), depth - 1);
+        process_level(partition.right.split(), depth - 1);
+    }
 }
 
 template <class Iterator>
 void recursive_graph_bisection(document_range<Iterator> documents, int depth)
 {
-    std::vector<document_partition<Iterator>> partitions = {documents.split()};
-    for (int d = 0; d < depth; d++) {
-        partitions = process_level(partitions);
-    }
+    process_level(documents.split(), depth);
 }
 
 void reorder_inverted_index(const std::string &          input_basename,
