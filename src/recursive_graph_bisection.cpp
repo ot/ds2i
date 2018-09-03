@@ -7,7 +7,7 @@ int main(int argc, char const *argv[]) {
 
     std::string input_basename;
     std::string output_basename;
-    size_t      min_len;
+    size_t      min_len = 0;
 
     CLI::App app{"Recursive graph bisection algorithm used for inverted indexed reordering."};
     app.add_option("-c,--collection", input_basename, "Collection basename")->required();
