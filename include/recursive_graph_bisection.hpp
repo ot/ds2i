@@ -40,8 +40,10 @@ struct doc_entry {
         terms.resize(terms_compressed.size() * 5);
         size_t n = 0;
         TightVariableByte::decode(terms_compressed.data(), terms.data(), terms_compressed.size(), n);
-        for (auto it = std::next(terms.begin()); it != terms.end(); ++it) {
-            *it += *std::prev(it);
+        if (not terms.empty()) {
+            for (auto it = std::next(terms.begin()); it != terms.end(); ++it) {
+                *it += *std::prev(it);
+            }
         }
         terms.resize(n);
         terms.shrink_to_fit();
