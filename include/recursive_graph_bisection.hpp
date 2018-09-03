@@ -4,21 +4,28 @@
 #include <vector>
 #include <fstream>
 
-#include "binary_freq_collection.hpp"
+#include <pstl/algorithm>
+#include <pstl/execution>
+
 #include "binary_collection.hpp"
+#include "binary_freq_collection.hpp"
 #include "codec/block_codecs.hpp"
 #include "util/index_build_utils.hpp"
+#include "util/log.hpp"
+#include "util/progress.hpp"
 
 namespace ds2i {
 
 constexpr int MIN_LEN = 1;
+constexpr int PARALLEL_THRESHOLD = 32;
+const Log2<1024> log2;
 
 namespace bp {
 
 inline double expb(double logn1, double logn2, size_t deg1, size_t deg2)
 {
-    double a = deg1 * (logn1 - std::log2(deg1 + 1));
-    double b = deg2 * (logn2 - std::log2(deg2 + 1));
+    double a = deg1 * (logn1 - log2(deg1 + 1));
+    double b = deg2 * (logn2 - log2(deg2 + 1));
     return a + b;
 };
 
@@ -33,6 +40,9 @@ struct doc_entry {
         terms.resize(terms_compressed.size() * 5);
         size_t n = 0;
         TightVariableByte::decode(terms_compressed.data(), terms.data(), terms_compressed.size(), n);
+        for (auto it = std::next(terms.begin()); it != terms.end(); ++it) {
+            *it += *std::prev(it);
+        }
         terms.resize(n);
         terms.shrink_to_fit();
         return terms;
@@ -68,27 +78,22 @@ forward_index forward_index::from_binary_collection(const std::string &input_bas
     auto num_terms = std::distance(++coll.begin(), coll.end());
 
     forward_index fwd(num_docs, num_terms);
+    progress p("Building forward index", num_terms);
 
     uint32_t tid = 0;
 
+    std::vector<uint32_t> prev(num_docs, 0u);
     for (auto it = ++coll.begin(); it != coll.end(); ++it) {
         for (const auto &d : *it) {
             fwd[d].id = d;
             if (it->size() >= MIN_LEN) {
-                // TODO: d-gap
-                TightVariableByte::encode_single(tid, fwd[d].terms_compressed);
+                TightVariableByte::encode_single(tid - prev[d], fwd[d].terms_compressed);
+                prev[d] = tid;
             }
         }
+        p.update_and_print(1);
         ++tid;
     }
-
-    // std::sort(forward_index.begin(), forward_index.end(), [](auto &&lhs, auto &&rhs) {
-    //    if ((lhs.terms.size() == 0 and rhs.terms.size() == 0) or
-    //        (lhs.terms.size() != 0 and rhs.terms.size() != 0)) {
-    //        return lhs.doc_id < rhs.doc_id;
-    //    }
-    //    return rhs.terms.size() == 0;
-    //});
 
     return fwd;
 }
@@ -123,6 +128,9 @@ struct doc_ref {
 
     static auto by_gain() {
         return [](const doc_ref &lhs, const doc_ref &rhs) { return lhs.gain() > rhs.gain(); };
+    }
+    static auto by_id() {
+        return [](const doc_ref &lhs, const doc_ref &rhs) { return lhs.id() < rhs.id(); };
     }
 };
 
@@ -201,13 +209,6 @@ void compute_degrees(document_partition<Iterator> &partition) {
         degree_map_pair{compute_degrees(partition.left), compute_degrees(partition.right)};
 }
 
-template <class Iterator>
-void compute_degrees(std::vector<document_partition<Iterator>> &partitions) {
-    for (auto &partition : partitions) {
-        compute_degrees(partition);
-    }
-}
-
 template <typename Iter>
 void compute_move_gains(Iter                       begin,
                         Iter                       end,
@@ -215,8 +216,8 @@ void compute_move_gains(Iter                       begin,
                         const std::ptrdiff_t       to_n,
                         const std::vector<size_t> &from_lex,
                         const std::vector<size_t> &to_lex) {
-    const auto logn1 = std::log2(from_n);
-    const auto logn2 = std::log2(to_n);
+    const auto logn1 = log2(from_n);
+    const auto logn2 = log2(to_n);
     auto compute_document_gain = [&](auto& d) {
         double gain  = 0.0;
         for(const auto& t : d.terms()) {
@@ -229,7 +230,7 @@ void compute_move_gains(Iter                       begin,
         }
         return d.update_gain(gain);
     };
-    std::for_each(begin, end, compute_document_gain);
+    std::for_each(std::execution::par_unseq, begin, end, compute_document_gain);
 }
 
 template <class Iterator>
@@ -258,33 +259,87 @@ void swap(document_partition<Iterator> &partition) {
         if (left->gain() + right->gain() <= 0) {
             break;
         }
+        for (auto &term : left->terms()) {
+            partition.degrees.left[term]--;
+            partition.degrees.right[term]++;
+        }
+        for (auto &term : right->terms()) {
+            partition.degrees.left[term]++;
+            partition.degrees.right[term]--;
+        }
         std::iter_swap(left, right);
-        // for (auto &term : left->terms()) {
-        //    partition.degrees.left[term]--;
-        //    partition.degrees.right[term]++;
-        //}
-        // for (auto &term : right->terms()) {
-        //    partition.degrees.left[term]++;
-        //    partition.degrees.right[term]--;
-        //}
     }
 }
 
 template <class Iterator>
-void recursive_graph_bisection(document_range<Iterator> documents, int depth)
+void process_partition(document_partition<Iterator>& partition)
 {
-     auto partition = documents.split();
-     for (int iteration = 0; iteration < 20; ++iteration) {
-        compute_degrees(partition);
+    compute_degrees(partition);
+    for (int iteration = 0; iteration < 20; ++iteration) {
         compute_gains(partition);
-        std::sort(partition.left.begin(), partition.left.end(), doc_ref::by_gain());
-        std::sort(partition.right.begin(), partition.right.end(), doc_ref::by_gain());
+        std::sort(std::execution::par_unseq,
+                  partition.left.begin(),
+                  partition.left.end(),
+                  doc_ref::by_gain());
+        std::sort(std::execution::par_unseq,
+                  partition.right.begin(),
+                  partition.right.end(),
+                  doc_ref::by_gain());
         swap(partition);
     }
+}
+
+template <class Iterator>
+void recursive_graph_bisection(document_range<Iterator> documents, int depth, progress& p)
+{
+    auto partition = documents.split();
+    process_partition(partition);
+    p.update_and_print(documents.size());
     if (depth > 1) {
-        recursive_graph_bisection(partition.left, depth - 1);
-        recursive_graph_bisection(partition.right, depth - 1);
+        recursive_graph_bisection(partition.left, depth - 1, p);
+        recursive_graph_bisection(partition.right, depth - 1, p);
     }
+}
+
+template <class Iterator>
+class recursive_graph_bisection_task : public tbb::task {
+   public:
+    recursive_graph_bisection_task(document_range<Iterator> documents, int depth, progress &p)
+        : m_documents(documents), m_depth(depth), m_progress(p) {}
+    task *execute() override {
+        auto partition = m_documents.split();
+        process_partition(partition);
+        m_progress.update_and_print(m_documents.size());
+        if (m_depth > 1) {
+            if (m_documents.size() < PARALLEL_THRESHOLD) {
+                recursive_graph_bisection(partition.left, m_depth - 1, m_progress);
+                recursive_graph_bisection(partition.right, m_depth - 1, m_progress);
+                return NULL;
+            }
+            recursive_graph_bisection_task<Iterator> &left_task =
+                *new (allocate_child()) recursive_graph_bisection_task<Iterator>(
+                    partition.left, m_depth - 1, m_progress);
+            recursive_graph_bisection_task<Iterator> &right_task =
+                *new (allocate_child()) recursive_graph_bisection_task<Iterator>(
+                    partition.right, m_depth - 1, m_progress);
+            set_ref_count(3);
+            spawn(left_task);
+            spawn_and_wait_for_all(right_task);
+        }
+        return NULL;
+    }
+
+   private:
+    document_range<Iterator> m_documents;
+    int                      m_depth;
+    progress &               m_progress;
+};
+
+template <class Iterator>
+void recursive_graph_bisection_mt(document_range<Iterator> documents, int depth, progress &p) {
+    recursive_graph_bisection_task<Iterator> &task = *new (
+        tbb::task::allocate_root()) recursive_graph_bisection_task<Iterator>(documents, depth, p);
+    tbb::task::spawn_root_and_wait(task);
 }
 
 } // namespace ds2i
