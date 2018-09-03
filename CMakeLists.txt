@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 project(DS2I CXX C)
 
-list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 configure_file(
   ${DS2I_SOURCE_DIR}/include/ds2i_config.hpp.in
   ${DS2I_SOURCE_DIR}/include/ds2i_config.hpp
