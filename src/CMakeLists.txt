@@ -72,10 +72,8 @@ target_link_libraries(shuffle_docids
 
 add_executable(recursive_graph_bisection recursive_graph_bisection.cpp)
 target_link_libraries(recursive_graph_bisection
-  Boost::iostreams
-  Boost::system
+  ${Boost_LIBRARIES}
   CLI11
   QMX
-  TBB
   ParallelSTL
   )
