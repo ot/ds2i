@@ -207,8 +207,16 @@ std::vector<size_t> compute_degrees(document_range<Iterator> &range) {
 
 template <class Iterator>
 void compute_degrees(document_partition<Iterator> &partition) {
+    std::vector<size_t> left_degree;
+    std::vector<size_t> right_degree;
+    tbb::parallel_invoke(
+        [&] {
+            left_degree = compute_degrees(partition.left);
+        }, [&] {
+            right_degree = compute_degrees(partition.right);
+        });
     partition.degrees =
-        degree_map_pair{compute_degrees(partition.left), compute_degrees(partition.right)};
+        degree_map_pair{left_degree, right_degree};
 }
 
 template <typename Iter>
@@ -239,18 +247,22 @@ template <class Iterator>
 void compute_gains(document_partition<Iterator> &partition) {
     auto n1 = partition.left.size();
     auto n2 = partition.right.size();
+    tbb::parallel_invoke(
+    [&] {
     compute_move_gains(partition.left.begin(),
                        partition.left.end(),
                        n1,
                        n2,
                        partition.degrees.left,
                        partition.degrees.right);
+    }, [&] {
     compute_move_gains(partition.right.begin(),
                        partition.right.end(),
                        n2,
                        n1,
                        partition.degrees.right,
                        partition.degrees.left);
+    });
 }
 
 template <class Iterator>
@@ -279,14 +291,18 @@ void process_partition(document_partition<Iterator>& partition)
     compute_degrees(partition);
     for (int iteration = 0; iteration < 20; ++iteration) {
         compute_gains(partition);
+        tbb::parallel_invoke(
+        [&] {
         std::sort(std::execution::par_unseq,
                   partition.left.begin(),
                   partition.left.end(),
                   doc_ref::by_gain());
+        }, [&] {
         std::sort(std::execution::par_unseq,
                   partition.right.begin(),
                   partition.right.end(),
                   doc_ref::by_gain());
+        });
         swap(partition);
     }
 }
@@ -298,6 +314,7 @@ void recursive_graph_bisection(document_range<Iterator> documents, int depth, pr
     process_partition(partition);
     p.update_and_print(documents.size());
     if (depth > 1) {
+
         tbb::parallel_invoke(
         [&] {
             recursive_graph_bisection(partition.left, depth - 1, p);
