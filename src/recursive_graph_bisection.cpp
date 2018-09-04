@@ -37,6 +37,8 @@ int main(int argc, char const *argv[]) {
     recursive_graph_bisection(initial_range, depth, bp_progress);
 
     auto mapping = get_mapping(documents);
+    fwd.clear();
+    documents.clear();
     reorder_inverted_index(input_basename, output_basename, mapping);
     return 0;
 }
