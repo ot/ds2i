@@ -47,22 +47,16 @@ struct doc_entry {
     }
 };
 
-class forward_index {
+class forward_index : public std::vector<doc_entry>{
    public:
-    forward_index(size_t size, size_t term_count)
-        : m_size(size), m_term_count(term_count), m_documents(size) {}
-    size_t               size() { return m_size; }
+    forward_index(size_t term_count)
+        : m_term_count(term_count) {}
+
     size_t               term_count() { return m_term_count; }
     static forward_index from_binary_collection(const std::string &input_basename, size_t min_len);
-    doc_entry &          operator[](size_t n) { return m_documents[n]; }
-    const doc_entry &    operator[](size_t n) const { return m_documents[n]; }
-    auto                 begin() { return m_documents.begin(); }
-    auto                 end() { return m_documents.end(); }
 
    private:
-    size_t                 m_size;
     size_t                 m_term_count;
-    std::vector<doc_entry> m_documents;
 };
 
 forward_index forward_index::from_binary_collection(const std::string &input_basename,
@@ -76,7 +70,8 @@ forward_index forward_index::from_binary_collection(const std::string &input_bas
     auto num_docs  = *firstseq.begin();
     auto num_terms = std::distance(++coll.begin(), coll.end());
 
-    forward_index fwd(num_docs, num_terms);
+    forward_index fwd(num_terms);
+    fwd.resize(num_docs);
     progress      p("Building forward index", num_terms);
 
     uint32_t tid = 0;

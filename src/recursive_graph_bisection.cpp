@@ -26,7 +26,6 @@ int main(int argc, char const *argv[]) {
     using namespace ds2i;
 
     bp::forward_index fwd = bp::forward_index::from_binary_collection(input_basename, min_len);
-
     std::vector<doc_ref> documents;
     std::transform(
         fwd.begin(), fwd.end(), std::back_inserter(documents), [](auto &d) { return doc_ref(&d); });
