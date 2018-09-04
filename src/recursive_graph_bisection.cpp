@@ -35,7 +35,7 @@ int main(int argc, char const *argv[]) {
 
     ds2i::progress bp_progress("Graph bisection", initial_range.size() * depth);
     bp_progress.update_and_print(0);
-    recursive_graph_bisection_mt(initial_range, depth, bp_progress);
+    recursive_graph_bisection(initial_range, depth, bp_progress);
 
     auto mapping = get_mapping(documents);
     reorder_inverted_index(input_basename, output_basename, mapping);

@@ -225,10 +225,10 @@ void compute_move_gains(Iter                       begin,
         for(const auto& t : d.terms()) {
             auto from_deg = from_lex[t];
             auto to_deg = to_lex[t];
-            if (from_deg > 0) {
-                gain += bp::expb(logn1, logn2, from_deg, to_deg);
-                gain -= bp::expb(logn1, logn2, from_deg - 1, to_deg + 1);
-            }
+            assert(from_deg > 0);
+
+            gain += bp::expb(logn1, logn2, from_deg, to_deg);
+            gain -= bp::expb(logn1, logn2, from_deg - 1, to_deg + 1);
         }
         return d.update_gain(gain);
     };
@@ -298,37 +298,13 @@ void recursive_graph_bisection(document_range<Iterator> documents, int depth, pr
     process_partition(partition);
     p.update_and_print(documents.size());
     if (depth > 1) {
-        recursive_graph_bisection(partition.left, depth - 1, p);
-        recursive_graph_bisection(partition.right, depth - 1, p);
+        tbb::parallel_invoke(
+        [&] {
+            recursive_graph_bisection(partition.left, depth - 1, p);
+        }, [&] {
+            recursive_graph_bisection(partition.right, depth - 1, p);
+        });
     }
-}
-
-template <class Iterator>
-struct recursive_graph_bisection_f {
-    recursive_graph_bisection_f(document_range<Iterator> documents, int depth, progress &p)
-        : documents(documents), depth(depth), p(p) {}
-    void operator()() const {
-        auto partition = documents.split();
-        process_partition(partition);
-        p.update_and_print(documents.size());
-        if (depth > 1) {
-            recursive_graph_bisection_f<Iterator> left(partition.left, depth - 1, p);
-            recursive_graph_bisection_f<Iterator> right(partition.right, depth - 1, p);
-            tbb::parallel_invoke(left, right);
-        }
-    }
-
-    document_range<Iterator> documents;
-    int                      depth;
-    progress &               p;
-
-};
-
-template <class Iterator>
-void recursive_graph_bisection_mt(document_range<Iterator> documents, int depth, progress &p)
-{
-    recursive_graph_bisection_f<Iterator> root(documents, depth, p);
-    root();
 }
 
 } // namespace ds2i
