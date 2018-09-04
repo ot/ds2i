@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cmath>
-#include <vector>
 #include <fstream>
+#include <vector>
 
 #include <pstl/algorithm>
 #include <pstl/execution>
@@ -15,15 +15,11 @@
 #include "util/progress.hpp"
 
 namespace ds2i {
-
-constexpr int MIN_LEN = 1;
-constexpr int PARALLEL_THRESHOLD = 32;
 const Log2<1024> log2;
 
 namespace bp {
 
-inline double expb(double logn1, double logn2, size_t deg1, size_t deg2)
-{
+inline double expb(double logn1, double logn2, size_t deg1, size_t deg2) {
     double a = deg1 * (logn1 - log2(deg1 + 1));
     double b = deg2 * (logn2 - log2(deg2 + 1));
     return a + b;
@@ -34,12 +30,12 @@ struct doc_entry {
     int                   range = 0;
     double                gain  = 0.0;
     std::vector<uint8_t>  terms_compressed{};
-    std::vector<uint32_t> terms() const
-    {
+    std::vector<uint32_t> terms() const {
         std::vector<uint32_t> terms;
         terms.resize(terms_compressed.size() * 5);
         size_t n = 0;
-        TightVariableByte::decode(terms_compressed.data(), terms.data(), terms_compressed.size(), n);
+        TightVariableByte::decode(
+            terms_compressed.data(), terms.data(), terms_compressed.size(), n);
         if (not terms.empty()) {
             for (auto it = std::next(terms.begin()); it != terms.end(); ++it) {
                 *it += *std::prev(it);
@@ -57,7 +53,7 @@ class forward_index {
         : m_size(size), m_term_count(term_count), m_documents(size) {}
     size_t               size() { return m_size; }
     size_t               term_count() { return m_term_count; }
-    static forward_index from_binary_collection(const std::string &input_basename);
+    static forward_index from_binary_collection(const std::string &input_basename, size_t min_len);
     doc_entry &          operator[](size_t n) { return m_documents[n]; }
     const doc_entry &    operator[](size_t n) const { return m_documents[n]; }
     auto                 begin() { return m_documents.begin(); }
@@ -69,7 +65,8 @@ class forward_index {
     std::vector<doc_entry> m_documents;
 };
 
-forward_index forward_index::from_binary_collection(const std::string &input_basename) {
+forward_index forward_index::from_binary_collection(const std::string &input_basename,
+                                                    size_t             min_len) {
     binary_collection coll((input_basename + ".docs").c_str());
 
     auto firstseq = *coll.begin();
@@ -80,7 +77,7 @@ forward_index forward_index::from_binary_collection(const std::string &input_bas
     auto num_terms = std::distance(++coll.begin(), coll.end());
 
     forward_index fwd(num_docs, num_terms);
-    progress p("Building forward index", num_terms);
+    progress      p("Building forward index", num_terms);
 
     uint32_t tid = 0;
 
@@ -88,7 +85,7 @@ forward_index forward_index::from_binary_collection(const std::string &input_bas
     for (auto it = ++coll.begin(); it != coll.end(); ++it) {
         for (const auto &d : *it) {
             fwd[d].id = d;
-            if (it->size() >= MIN_LEN) {
+            if (it->size() >= min_len) {
                 TightVariableByte::encode_single(tid - prev[d], fwd[d].terms_compressed);
                 prev[d] = tid;
             }
@@ -119,14 +116,6 @@ struct doc_ref {
     void     update_range(int range) { ref->range = range; }
 
     std::vector<uint32_t> terms() const { return ref->terms(); }
-
-    static auto by_range_gain() {
-        return [](const doc_ref &lhs, const doc_ref &rhs) {
-            // TODO: make more efficient
-            return std::make_pair(lhs.range(), -lhs.gain()) <
-                   std::make_pair(rhs.range(), -rhs.gain());
-        };
-    }
 
     static auto by_gain() {
         return [](const doc_ref &lhs, const doc_ref &rhs) { return lhs.gain() > rhs.gain(); };
@@ -176,7 +165,7 @@ struct document_range {
     }
 };
 
-template<class Iterator>
+template <class Iterator>
 struct document_partition {
     document_range<Iterator> left;
     document_range<Iterator> right;
@@ -184,10 +173,9 @@ struct document_partition {
     size_t                   term_count;
 };
 
-auto get_mapping = [](const auto &collection)
-{
+auto get_mapping = [](const auto &collection) {
     std::vector<uint32_t> mapping(collection.size(), 0u);
-    size_t p = 0;
+    size_t                p = 0;
     for (const auto &i : collection) {
         mapping[i.id()] = p++;
     }
@@ -209,14 +197,9 @@ template <class Iterator>
 void compute_degrees(document_partition<Iterator> &partition) {
     std::vector<size_t> left_degree;
     std::vector<size_t> right_degree;
-    tbb::parallel_invoke(
-        [&] {
-            left_degree = compute_degrees(partition.left);
-        }, [&] {
-            right_degree = compute_degrees(partition.right);
-        });
-    partition.degrees =
-        degree_map_pair{left_degree, right_degree};
+    tbb::parallel_invoke([&] { left_degree = compute_degrees(partition.left); },
+                         [&] { right_degree = compute_degrees(partition.right); });
+    partition.degrees = degree_map_pair{left_degree, right_degree};
 }
 
 template <typename Iter>
@@ -226,13 +209,13 @@ void compute_move_gains(Iter                       begin,
                         const std::ptrdiff_t       to_n,
                         const std::vector<size_t> &from_lex,
                         const std::vector<size_t> &to_lex) {
-    const auto logn1 = log2(from_n);
-    const auto logn2 = log2(to_n);
-    auto compute_document_gain = [&](auto& d) {
-        double gain  = 0.0;
-        for(const auto& t : d.terms()) {
+    const auto logn1                 = log2(from_n);
+    const auto logn2                 = log2(to_n);
+    auto       compute_document_gain = [&](auto &d) {
+        double gain = 0.0;
+        for (const auto &t : d.terms()) {
             auto from_deg = from_lex[t];
-            auto to_deg = to_lex[t];
+            auto to_deg   = to_lex[t];
             assert(from_deg > 0);
 
             gain += bp::expb(logn1, logn2, from_deg, to_deg);
@@ -248,21 +231,22 @@ void compute_gains(document_partition<Iterator> &partition) {
     auto n1 = partition.left.size();
     auto n2 = partition.right.size();
     tbb::parallel_invoke(
-    [&] {
-    compute_move_gains(partition.left.begin(),
-                       partition.left.end(),
-                       n1,
-                       n2,
-                       partition.degrees.left,
-                       partition.degrees.right);
-    }, [&] {
-    compute_move_gains(partition.right.begin(),
-                       partition.right.end(),
-                       n2,
-                       n1,
-                       partition.degrees.right,
-                       partition.degrees.left);
-    });
+        [&] {
+            compute_move_gains(partition.left.begin(),
+                               partition.left.end(),
+                               n1,
+                               n2,
+                               partition.degrees.left,
+                               partition.degrees.right);
+        },
+        [&] {
+            compute_move_gains(partition.right.begin(),
+                               partition.right.end(),
+                               n2,
+                               n1,
+                               partition.degrees.right,
+                               partition.degrees.left);
+        });
 }
 
 template <class Iterator>
@@ -286,41 +270,36 @@ void swap(document_partition<Iterator> &partition) {
 }
 
 template <class Iterator>
-void process_partition(document_partition<Iterator>& partition)
-{
+void process_partition(document_partition<Iterator> &partition) {
     compute_degrees(partition);
     for (int iteration = 0; iteration < 20; ++iteration) {
         compute_gains(partition);
         tbb::parallel_invoke(
-        [&] {
-        std::sort(std::execution::par_unseq,
-                  partition.left.begin(),
-                  partition.left.end(),
-                  doc_ref::by_gain());
-        }, [&] {
-        std::sort(std::execution::par_unseq,
-                  partition.right.begin(),
-                  partition.right.end(),
-                  doc_ref::by_gain());
-        });
+            [&] {
+                std::sort(std::execution::par_unseq,
+                          partition.left.begin(),
+                          partition.left.end(),
+                          doc_ref::by_gain());
+            },
+            [&] {
+                std::sort(std::execution::par_unseq,
+                          partition.right.begin(),
+                          partition.right.end(),
+                          doc_ref::by_gain());
+            });
         swap(partition);
     }
 }
 
 template <class Iterator>
-void recursive_graph_bisection(document_range<Iterator> documents, int depth, progress& p)
-{
+void recursive_graph_bisection(document_range<Iterator> documents, int depth, progress &p) {
     auto partition = documents.split();
     process_partition(partition);
     p.update_and_print(documents.size());
     if (depth > 1) {
 
-        tbb::parallel_invoke(
-        [&] {
-            recursive_graph_bisection(partition.left, depth - 1, p);
-        }, [&] {
-            recursive_graph_bisection(partition.right, depth - 1, p);
-        });
+        tbb::parallel_invoke([&] { recursive_graph_bisection(partition.left, depth - 1, p); },
+                             [&] { recursive_graph_bisection(partition.right, depth - 1, p); });
     }
 }
 

@@ -11,7 +11,7 @@ int main(int argc, char const *argv[]) {
     std::string output_basename;
     size_t      min_len = 0;
     size_t      depth   = 9;
-    int         threads = 4;
+    size_t      threads = 4;
 
     CLI::App app{"Recursive graph bisection algorithm used for inverted indexed reordering."};
     app.add_option("-c,--collection", input_basename, "Collection basename")->required();
@@ -25,7 +25,7 @@ int main(int argc, char const *argv[]) {
 
     using namespace ds2i;
 
-    bp::forward_index fwd = bp::forward_index::from_binary_collection(input_basename);
+    bp::forward_index fwd = bp::forward_index::from_binary_collection(input_basename, min_len);
 
     std::vector<doc_ref> documents;
     std::transform(
