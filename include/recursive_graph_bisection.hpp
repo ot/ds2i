@@ -117,11 +117,6 @@ struct doc_ref {
     }
 };
 
-template <class Iterator>
-constexpr void assert_random_access() {
-    static_assert(std::iterator_traits<Iterator>::iterator_category,
-                  "iterator must be random access");
-}
 
 struct degree_map_pair {
     std::vector<size_t> left;
