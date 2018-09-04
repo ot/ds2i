@@ -147,7 +147,7 @@ struct document_range {
         auto     right_id = left_id + 1;
         Iterator mid      = std::next(first, std::distance(first, last) / 2);
         return {
-            {left_id, first, mid, term_count}, {right_id, mid, last, term_count}, {}, term_count};
+            {left_id, first, mid, term_count}, {right_id, mid, last, term_count}, term_count};
     }
 };
 
@@ -155,7 +155,6 @@ template <class Iterator>
 struct document_partition {
     document_range<Iterator> left;
     document_range<Iterator> right;
-    degree_map_pair          degrees{};
     size_t                   term_count;
 };
 
@@ -180,12 +179,12 @@ std::vector<size_t> compute_degrees(document_range<Iterator> &range) {
 }
 
 template <class Iterator>
-void compute_degrees(document_partition<Iterator> &partition) {
+degree_map_pair compute_degrees(document_partition<Iterator> &partition) {
     std::vector<size_t> left_degree;
     std::vector<size_t> right_degree;
     tbb::parallel_invoke([&] { left_degree = compute_degrees(partition.left); },
                          [&] { right_degree = compute_degrees(partition.right); });
-    partition.degrees = degree_map_pair{left_degree, right_degree};
+    return degree_map_pair{left_degree, right_degree};
 }
 
 template <typename Iter>
@@ -213,7 +212,7 @@ void compute_move_gains(Iter                       begin,
 }
 
 template <class Iterator>
-void compute_gains(document_partition<Iterator> &partition) {
+void compute_gains(document_partition<Iterator> &partition, const degree_map_pair &degrees) {
     auto n1 = partition.left.size();
     auto n2 = partition.right.size();
     tbb::parallel_invoke(
@@ -222,21 +221,21 @@ void compute_gains(document_partition<Iterator> &partition) {
                                partition.left.end(),
                                n1,
                                n2,
-                               partition.degrees.left,
-                               partition.degrees.right);
+                               degrees.left,
+                               degrees.right);
         },
         [&] {
             compute_move_gains(partition.right.begin(),
                                partition.right.end(),
                                n2,
                                n1,
-                               partition.degrees.right,
-                               partition.degrees.left);
+                               degrees.right,
+                               degrees.left);
         });
 }
 
 template <class Iterator>
-void swap(document_partition<Iterator> &partition) {
+void swap(document_partition<Iterator> &partition, degree_map_pair &degrees) {
     auto left  = partition.left.begin();
     auto right = partition.right.begin();
     for (; left != partition.left.end() && right != partition.right.end(); ++left, ++right) {
@@ -244,12 +243,12 @@ void swap(document_partition<Iterator> &partition) {
             break;
         }
         for (auto &term : left->terms()) {
-            partition.degrees.left[term]--;
-            partition.degrees.right[term]++;
+            degrees.left[term]--;
+            degrees.right[term]++;
         }
         for (auto &term : right->terms()) {
-            partition.degrees.left[term]++;
-            partition.degrees.right[term]--;
+            degrees.left[term]++;
+            degrees.right[term]--;
         }
         std::iter_swap(left, right);
     }
@@ -257,9 +256,9 @@ void swap(document_partition<Iterator> &partition) {
 
 template <class Iterator>
 void process_partition(document_partition<Iterator> &partition) {
-    compute_degrees(partition);
+    auto degrees = compute_degrees(partition);
     for (int iteration = 0; iteration < 20; ++iteration) {
-        compute_gains(partition);
+        compute_gains(partition, degrees);
         tbb::parallel_invoke(
             [&] {
                 std::sort(std::execution::par_unseq,
@@ -273,7 +272,7 @@ void process_partition(document_partition<Iterator> &partition) {
                           partition.right.end(),
                           doc_ref::by_gain());
             });
-        swap(partition);
+        swap(partition, degrees);
     }
 }
 
