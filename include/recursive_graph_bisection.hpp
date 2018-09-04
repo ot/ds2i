@@ -27,7 +27,6 @@ inline double expb(double logn1, double logn2, size_t deg1, size_t deg2) {
 
 struct doc_entry {
     uint32_t              id    = 0;
-    int                   range = 0;
     double                gain  = 0.0;
     std::vector<uint8_t>  terms_compressed{};
     std::vector<uint32_t> terms() const {
@@ -105,10 +104,8 @@ struct doc_ref {
     bp::doc_entry *ref;
 
     uint32_t id() const { return ref->id; }
-    int      range() const { return ref->range; }
     double   gain() const { return ref->gain; }
     void     update_gain(double gain) { ref->gain = gain; }
-    void     update_range(int range) { ref->range = range; }
 
     std::vector<uint32_t> terms() const { return ref->terms(); }
 
@@ -151,12 +148,6 @@ struct document_range {
         Iterator mid      = std::next(first, std::distance(first, last) / 2);
         return {
             {left_id, first, mid, term_count}, {right_id, mid, last, term_count}, {}, term_count};
-    }
-
-    void update_range_ids() {
-        for (auto &doc : *this) {
-            doc.update_range(id);
-        }
     }
 };
 
