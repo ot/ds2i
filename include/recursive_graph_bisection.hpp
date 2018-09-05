@@ -109,12 +109,8 @@ struct doc_ref {
 
     std::vector<uint32_t> terms() const { return ref->terms(); }
 
-    static auto by_gain() {
-        return [](const doc_ref &lhs, const doc_ref &rhs) { return lhs.gain() > rhs.gain(); };
-    }
-    static auto by_id() {
-        return [](const doc_ref &lhs, const doc_ref &rhs) { return lhs.id() < rhs.id(); };
-    }
+    static bool by_gain(const doc_ref &lhs, const doc_ref &rhs) { return lhs.gain() > rhs.gain(); }
+    static auto by_id(const doc_ref &lhs, const doc_ref &rhs) { return lhs.id() < rhs.id(); }
 };
 
 
@@ -259,13 +255,13 @@ void process_partition(document_partition<Iterator> &partition) {
                 std::sort(std::execution::par_unseq,
                           partition.left.begin(),
                           partition.left.end(),
-                          doc_ref::by_gain());
+                          doc_ref::by_gain);
             },
             [&] {
                 std::sort(std::execution::par_unseq,
                           partition.right.begin(),
                           partition.right.end(),
-                          doc_ref::by_gain());
+                          doc_ref::by_gain);
             });
         swap(partition, degrees);
     }
@@ -276,10 +272,12 @@ void recursive_graph_bisection(document_range<Iterator> documents, int depth, pr
     auto partition = documents.split();
     process_partition(partition);
     p.update_and_print(documents.size());
-    if (depth > 1) {
-
+    if (depth > 1 && documents.size() > 2) {
         tbb::parallel_invoke([&] { recursive_graph_bisection(partition.left, depth - 1, p); },
                              [&] { recursive_graph_bisection(partition.right, depth - 1, p); });
+    } else {
+        std::sort(partition.left.begin(), partition.left.end(), doc_ref::by_id);
+        std::sort(partition.right.begin(), partition.right.end(), doc_ref::by_id);
     }
 }
 
