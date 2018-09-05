@@ -1,8 +1,7 @@
 #include "CLI/CLI.hpp"
-#include "pstl/execution"
 #include "tbb/task_scheduler_init.h"
 
-#include "recursive_graph_bisection.hpp"
+#include "util/index_build_utils.hpp"
 #include "util/progress.hpp"
 
 int main(int argc, char const *argv[]) {
