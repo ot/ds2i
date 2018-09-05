@@ -1,5 +1,4 @@
 #include "CLI/CLI.hpp"
-#include "tbb/task_scheduler_init.h"
 
 #include "util/index_build_utils.hpp"
 #include "util/progress.hpp"
