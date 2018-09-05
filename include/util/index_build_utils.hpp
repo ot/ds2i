@@ -152,4 +152,47 @@ namespace ds2i {
 
     }
 
+    void sample_inverted_index(const std::string &input_basename,
+                               const std::string &output_basename,
+                               const uint32_t     max_doc) {
+
+        binary_collection input_sizes((input_basename + ".sizes").c_str());
+        auto sizes = *input_sizes.begin();
+
+        std::vector<uint32_t> new_sizes(sizes.begin(), std::next(sizes.begin(), max_doc));
+        std::ofstream output_sizes(output_basename + ".sizes");
+        emit(output_sizes, sizes.size());
+        emit(output_sizes, new_sizes.data(), max_doc);
+
+        std::ofstream output_docs(output_basename + ".docs");
+        std::ofstream output_freqs(output_basename + ".freqs");
+        emit(output_docs, 1);
+        emit(output_docs, max_doc);
+
+        binary_freq_collection input(input_basename.c_str());
+
+        std::vector<std::pair<uint32_t, uint32_t>> pl;
+        for (const auto& seq: input) {
+
+            auto dociter = seq.docs.begin();
+            auto freqiter = seq.freqs.begin();
+            for (; dociter != seq.docs.end(); ++dociter, ++freqiter) {
+                auto doc = *dociter;
+                if (doc >= max_doc) { break; }
+                pl.emplace_back(doc, *freqiter);
+            }
+            if (pl.empty()) { continue; }
+
+            emit(output_docs, pl.size());
+            emit(output_freqs, pl.size());
+
+            for (const auto& posting: pl) {
+                emit(output_docs, posting.first);
+                emit(output_freqs, posting.second);
+            }
+            pl.clear();
+        }
+
+    }
+
 }
