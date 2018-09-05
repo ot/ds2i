@@ -10,7 +10,7 @@ int main(int argc, char const *argv[]) {
     std::string input_basename;
     std::string output_basename;
     size_t      min_len = 0;
-    size_t      depth   = 9;
+    size_t      depth   = 0;
     size_t      threads = 4;
 
     CLI::App app{"Recursive graph bisection algorithm used for inverted indexed reordering."};
@@ -32,6 +32,10 @@ int main(int argc, char const *argv[]) {
     document_range<std::vector<doc_ref>::iterator> initial_range{
         0, documents.begin(), documents.end(), fwd.term_count()};
 
+    if (depth == 0u) {
+        depth = static_cast<size_t>(std::log2(fwd.size()));
+    }
+    std::cerr << "Using max depth " << depth << std::endl;
     ds2i::progress bp_progress("Graph bisection", initial_range.size() * depth);
     bp_progress.update_and_print(0);
     recursive_graph_bisection(initial_range, depth, bp_progress);
