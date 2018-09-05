@@ -10,6 +10,7 @@
 #include "binary_collection.hpp"
 #include "binary_freq_collection.hpp"
 #include "codec/block_codecs.hpp"
+#include "codec/varintgb.hpp"
 #include "util/index_build_utils.hpp"
 #include "util/log.hpp"
 #include "util/progress.hpp"
@@ -26,22 +27,14 @@ inline double expb(double logn1, double logn2, size_t deg1, size_t deg2) {
 };
 
 struct doc_entry {
-    uint32_t              id    = 0;
+    uint32_t              id    = 0u;
     double                gain  = 0.0;
+    size_t                term_count = 0u;
     std::vector<uint8_t>  terms_compressed{};
     std::vector<uint32_t> terms() const {
-        std::vector<uint32_t> terms;
-        terms.resize(terms_compressed.size() * 5);
-        size_t n = 0;
-        TightVariableByte::decode(
-            terms_compressed.data(), terms.data(), terms_compressed.size(), n);
-        if (not terms.empty()) {
-            for (auto it = std::next(terms.begin()); it != terms.end(); ++it) {
-                *it += *std::prev(it);
-            }
-        }
-        terms.resize(n);
-        terms.shrink_to_fit();
+        std::vector<uint32_t> terms(term_count);
+        VarIntGB<true> varintgb_codec;
+        varintgb_codec.decodeArray(terms_compressed.data(), term_count, terms.data());
         return terms;
     }
 };
@@ -71,7 +64,7 @@ forward_index forward_index::from_binary_collection(const std::string &input_bas
 
     forward_index fwd(num_terms);
     fwd.resize(num_docs);
-    progress      p("Building forward index", num_terms);
+    progress p("Building forward index", num_terms + num_docs);
 
     uint32_t tid = 0;
 
@@ -87,9 +80,24 @@ forward_index forward_index::from_binary_collection(const std::string &input_bas
         p.update_and_print(1);
         ++tid;
     }
+    for (uint32_t doc = 0u; doc < fwd.size(); ++doc) {
+        auto& terms_compressed = fwd[doc].terms_compressed;
+        std::vector<uint32_t> terms(terms_compressed.size() * 5);
+        size_t n = 0;
+        TightVariableByte::decode(
+            terms_compressed.data(), terms.data(), terms_compressed.size(), n);
+        fwd[doc].term_count = n;
+        terms_compressed.clear();
+        terms_compressed.resize(2 * n * sizeof(uint32_t));
+        VarIntGB<false> varintgb_codec;
+        size_t byte_size = varintgb_codec.encodeArray(terms.data(), n, terms_compressed.data());
+        terms_compressed.resize(byte_size);
+        p.update_and_print(1);
+    }
 
     return fwd;
 }
+
 } // namespace bp
 
 struct doc_ref {
