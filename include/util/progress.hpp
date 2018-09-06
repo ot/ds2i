@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <condition_variable>
 #include <iostream>
 #include <unordered_map>
 
@@ -13,22 +14,35 @@ class progress {
             throw std::runtime_error("goal must be positive");
         }
         m_goal = goal;
+        std::thread t([&]() { status(); });
+        t.detach();
     }
-    ~progress() { std::cerr << "\n"; }
+    ~progress() {
+        m_status.notify_one();
+        std::unique_lock<std::mutex> lock(m_mut);
+        print_status();
+        std::cerr << std::endl;
+    }
 
     void update(size_t inc) {
         std::unique_lock<std::mutex> lock(m_mut);
         m_count += inc;
     }
 
-    void update_and_print(size_t inc) {
+    void print() {
         std::unique_lock<std::mutex> lock(m_mut);
-        m_count += inc;
         size_t progress = (100 * m_count) / m_goal;
         std::chrono::seconds elapsed  = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - m_start);
-        std::cerr << '\r' << m_name << ": " << progress << "% [" << elapsed.count() << " s]"
-                  << std::flush;
+        std::cerr << '\r' << m_name << ": " << progress << "% [" << elapsed.count() << " s]";
+    }
+
+    void status() {
+        while (m_count < m_goal) {
+            std::unique_lock<std::mutex> lock(m_mut);
+            print_status();
+            m_status.wait_for(lock, std::chrono::seconds(1));
+        }
     }
 
    private:
@@ -39,6 +53,14 @@ class progress {
     std::chrono::time_point<std::chrono::steady_clock> m_start = std::chrono::steady_clock::now();
 
     std::mutex m_mut;
+    std::condition_variable m_status;
+
+    void print_status() {
+        size_t progress = (100 * m_count) / m_goal;
+        std::chrono::seconds elapsed  = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - m_start);
+        std::cerr << '\r' << m_name << ": " << progress << "% [" << elapsed.count() << " s]";
+    }
 };
 
 }

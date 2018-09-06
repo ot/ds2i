@@ -37,7 +37,7 @@ int main(int argc, char const *argv[]) {
     }
     std::cerr << "Using max depth " << depth << std::endl;
     ds2i::progress bp_progress("Graph bisection", initial_range.size() * depth);
-    bp_progress.update_and_print(0);
+    bp_progress.update(0);
     recursive_graph_bisection(initial_range, depth, bp_progress);
 
     auto mapping = get_mapping(documents);
