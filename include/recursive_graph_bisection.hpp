@@ -44,42 +44,51 @@ class forward_index : public std::vector<doc_entry>{
     forward_index(size_t term_count)
         : m_term_count(term_count) {}
 
-    size_t               term_count() { return m_term_count; }
-    static forward_index from_binary_collection(const std::string &input_basename, size_t min_len);
+    const size_t &        term_count() const { return m_term_count; }
+    static forward_index &compress(forward_index &fwd);
+    static forward_index  from_inverted_index(const std::string &input_basename, size_t min_len);
+    static forward_index  read(const std::string &input_file);
+    static void           write(const forward_index &fwd, const std::string &output_file);
 
    private:
     size_t                 m_term_count;
 };
 
-forward_index forward_index::from_binary_collection(const std::string &input_basename,
-                                                    size_t             min_len) {
-    binary_collection coll((input_basename + ".docs").c_str());
-
-    auto firstseq = *coll.begin();
-    if (firstseq.size() != 1) {
-        throw std::invalid_argument("First sequence should only contain number of documents");
+void forward_index::write(const forward_index &fwd, const std::string &output_file)
+{
+    std::ofstream out(output_file.c_str());
+    size_t size = fwd.size();
+    out.write(reinterpret_cast<const char *>(&fwd.m_term_count), sizeof(fwd.m_term_count));
+    out.write(reinterpret_cast<const char *>(&size), sizeof(size));
+    for (const auto& doc : fwd) {
+        size = doc.terms_compressed.size();
+        out.write(reinterpret_cast<const char *>(&doc.term_count), sizeof(doc.term_count));
+        out.write(reinterpret_cast<const char *>(&size), sizeof(size));
+        out.write(reinterpret_cast<const char *>(doc.terms_compressed.data()), size);
     }
-    auto num_docs  = *firstseq.begin();
-    auto num_terms = std::distance(++coll.begin(), coll.end());
+}
 
-    forward_index fwd(num_terms);
-    fwd.resize(num_docs);
-    progress p("Building forward index", num_terms + num_docs);
-
-    uint32_t tid = 0;
-
-    std::vector<uint32_t> prev(num_docs, 0u);
-    for (auto it = ++coll.begin(); it != coll.end(); ++it) {
-        for (const auto &d : *it) {
-            fwd[d].id = d;
-            if (it->size() >= min_len) {
-                TightVariableByte::encode_single(tid - prev[d], fwd[d].terms_compressed);
-                prev[d] = tid;
-            }
-        }
-        p.update_and_print(1);
-        ++tid;
+forward_index forward_index::read(const std::string &input_file)
+{
+    std::ifstream in(input_file.c_str());
+    size_t term_count, docs_count;
+    in.read(reinterpret_cast<char *>(&term_count), sizeof(term_count));
+    in.read(reinterpret_cast<char *>(&docs_count), sizeof(docs_count));
+    forward_index fwd(term_count);
+    fwd.resize(docs_count);
+    for (uint32_t doc_id = 0; doc_id < docs_count; ++doc_id) {
+        size_t block_size;
+        in.read(reinterpret_cast<char *>(&term_count), sizeof(term_count));
+        in.read(reinterpret_cast<char *>(&block_size), sizeof(block_size));
+        fwd[doc_id] = doc_entry{doc_id, 0.0, term_count, std::vector<uint8_t>(block_size)};
+        in.read(reinterpret_cast<char *>(fwd[doc_id].terms_compressed.data()), block_size);
     }
+    return fwd;
+}
+
+forward_index &forward_index::compress(forward_index &fwd)
+{
+    progress p("Compressing forward index", fwd.size());
     for (uint32_t doc = 0u; doc < fwd.size(); ++doc) {
         auto& terms_compressed = fwd[doc].terms_compressed;
         std::vector<uint32_t> terms(terms_compressed.size() * 5);
@@ -92,8 +101,42 @@ forward_index forward_index::from_binary_collection(const std::string &input_bas
         VarIntGB<false> varintgb_codec;
         size_t byte_size = varintgb_codec.encodeArray(terms.data(), n, terms_compressed.data());
         terms_compressed.resize(byte_size);
-        p.update_and_print(1);
+        terms_compressed.shrink_to_fit();
+        p.update(1);
     }
+    return fwd;
+}
+
+forward_index forward_index::from_inverted_index(const std::string &input_basename,
+                                                 size_t             min_len) {
+    binary_collection coll((input_basename + ".docs").c_str());
+
+    auto firstseq = *coll.begin();
+    if (firstseq.size() != 1) {
+        throw std::invalid_argument("First sequence should only contain number of documents");
+    }
+    auto num_docs  = *firstseq.begin();
+    auto num_terms = std::distance(++coll.begin(), coll.end());
+
+    forward_index fwd(num_terms);
+    fwd.resize(num_docs);
+    {
+        progress p("Building forward index", num_terms);
+        uint32_t tid = 0;
+        std::vector<uint32_t> prev(num_docs, 0u);
+        for (auto it = ++coll.begin(); it != coll.end(); ++it) {
+            for (const auto &d : *it) {
+                fwd[d].id = d;
+                if (it->size() >= min_len) {
+                    TightVariableByte::encode_single(tid - prev[d], fwd[d].terms_compressed);
+                    prev[d] = tid;
+                }
+            }
+            p.update(1);
+            ++tid;
+        }
+    }
+    compress(fwd);
 
     return fwd;
 }
@@ -225,14 +268,14 @@ void compute_move_gains_caching(Iter                       begin,
     auto       compute_document_gain = [&](auto &d) {
         double gain = 0.0;
         for (const auto &t : d.terms()) {
-            if (gain_cache[t].has_value()) {
+            if (not gain_cache[t].has_value()) {
                 auto from_deg = from_lex[t];
                 auto to_deg   = to_lex[t];
                 assert(from_deg > 0);
 
                 auto term_gain = bp::expb(logn1, logn2, from_deg, to_deg) -
                                  bp::expb(logn1, logn2, from_deg - 1, to_deg + 1);
-                gain_cache[t] = gain;
+                gain_cache[t] = term_gain;
             }
             gain += gain_cache[t].value();
         }
@@ -338,36 +381,17 @@ void process_partition(document_partition<Iterator> &partition,
 }
 
 template <class Iterator>
-void sequential_graph_bisection(document_range<Iterator> documents, int depth, progress &p) {
-    auto partition = documents.split();
-    process_partition(partition, compute_move_gains<Iterator>);
-    p.update_and_print(documents.size());
-    if (depth > 1 && documents.size() > 2) {
-        sequential_graph_bisection(partition.left, depth - 1, p);
-        sequential_graph_bisection(partition.right, depth - 1, p);
-    } else {
-        std::sort(partition.left.begin(), partition.left.end(), doc_ref::by_id);
-        std::sort(partition.right.begin(), partition.right.end(), doc_ref::by_id);
-    }
-}
-
-template <class Iterator>
 void recursive_graph_bisection(document_range<Iterator> documents, int depth, progress &p) {
     auto partition = documents.split();
-    if (documents.size() > 256) {
-        process_partition(partition, compute_move_gains_caching<Iterator>);
+    if (documents.size() > 1024) {
+      process_partition(partition, compute_move_gains_caching<Iterator>);
     } else {
-        process_partition(partition, compute_move_gains<Iterator>);
+      process_partition(partition, compute_move_gains<Iterator>);
     }
-    p.update_and_print(documents.size());
+    p.update(documents.size());
     if (depth > 1 && documents.size() > 2) {
-        if (documents.size() > 64) {
-            tbb::parallel_invoke([&] { recursive_graph_bisection(partition.left, depth - 1, p); },
-                                 [&] { recursive_graph_bisection(partition.right, depth - 1, p); });
-        } else {
-            sequential_graph_bisection(partition.left, depth - 1, p);
-            sequential_graph_bisection(partition.right, depth - 1, p);
-        }
+        tbb::parallel_invoke([&] { recursive_graph_bisection(partition.left, depth - 1, p); },
+                             [&] { recursive_graph_bisection(partition.right, depth - 1, p); });
     } else {
         std::sort(partition.left.begin(), partition.left.end(), doc_ref::by_id);
         std::sort(partition.right.begin(), partition.right.end(), doc_ref::by_id);

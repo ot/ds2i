@@ -8,6 +8,7 @@
 namespace ds2i {
 
 class progress {
+
    public:
     progress(const std::string &name, size_t goal) : m_name(name) {
         if (goal == 0) {
@@ -31,10 +32,7 @@ class progress {
 
     void print() {
         std::unique_lock<std::mutex> lock(m_mut);
-        size_t progress = (100 * m_count) / m_goal;
-        std::chrono::seconds elapsed  = std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - m_start);
-        std::cerr << '\r' << m_name << ": " << progress << "% [" << elapsed.count() << " s]";
+        print_status();
     }
 
     void status() {
@@ -59,7 +57,22 @@ class progress {
         size_t progress = (100 * m_count) / m_goal;
         std::chrono::seconds elapsed  = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - m_start);
-        std::cerr << '\r' << m_name << ": " << progress << "% [" << elapsed.count() << " s]";
+        std::cerr << '\r' << m_name << ": " << progress << "% [";
+        format_interval(std::cerr, elapsed);
+        std::cerr << "]";
+    }
+
+    std::ostream& format_interval(std::ostream& out, std::chrono::seconds time) {
+        using std::chrono::hours;
+        using std::chrono::minutes;
+        using std::chrono::seconds;
+        hours h = std::chrono::duration_cast<hours>(time);
+        minutes m = std::chrono::duration_cast<minutes>(time - h);
+        seconds s = std::chrono::duration_cast<seconds>(time - h - m);
+        if (h.count() > 0) { out << h.count() << "h "; }
+        if (m.count() > 0) { out << m.count() << "m "; }
+        out << s.count() << "s";
+        return out;
     }
 };
 
