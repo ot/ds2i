@@ -14,6 +14,7 @@ int main(int argc, char const *argv[]) {
     size_t      min_len = 0;
     size_t      depth   = 0;
     size_t      threads = 4;
+    bool        nogb    = false;
 
     CLI::App app{"Recursive graph bisection algorithm used for inverted indexed reordering."};
     app.add_option("-c,--collection", input_basename, "Collection basename")->required();
@@ -23,6 +24,7 @@ int main(int argc, char const *argv[]) {
     app.add_option("-m,--min-len", min_len, "Minimum list threshold");
     app.add_option("-d,--depth", depth, "Recursion depth");
     app.add_option("-t,--threads", threads, "Thread count");
+    app.add_flag("--nogb", nogb, "No VarIntGB compression in forward index");
     CLI11_PARSE(app, argc, argv);
 
     if (app.count("--output") + app.count("--store-fwdidx") == 0u) {
@@ -34,21 +36,23 @@ int main(int argc, char const *argv[]) {
 
     using namespace ds2i;
 
-    bp::forward_index fwd =
+    forward_index fwd =
         app.count("--fwdidx") > 0u
-            ? bp::forward_index::read(input_fwd)
-            : bp::forward_index::from_inverted_index(input_basename, min_len);
+            ? forward_index::read(input_fwd)
+            : forward_index::from_inverted_index(input_basename, min_len, not nogb);
     if (app.count("--store-fwdidx") > 0u) {
-        bp::forward_index::write(fwd, output_fwd);
+        forward_index::write(fwd, output_fwd);
     }
 
     if (app.count("--output")) {
-        std::vector<doc_ref> documents;
-        std::transform(
-            fwd.begin(), fwd.end(), std::back_inserter(documents), [](auto &d) { return doc_ref(&d); });
-        document_range<std::vector<doc_ref>::iterator> initial_range{
-            0, documents.begin(), documents.end(), fwd.term_count()};
+        std::vector<uint32_t> documents(fwd.size());
+        std::iota(documents.begin(), documents.end(), 0u);
+        std::vector<double> gains(fwd.size(), 0.0);
+        document_range<std::vector<uint32_t>::iterator> initial_range(
+            documents.begin(), documents.end(), fwd, gains);
 
+        //std::cerr << "Precomputing move gains..." << std::endl;
+        //bp::precomputed_moves = bp::precomputed_moves_t(documents.size(), 1024);
         if (depth == 0u) {
             depth = static_cast<size_t>(std::log2(fwd.size()));
         }
