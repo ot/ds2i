@@ -128,7 +128,6 @@ forward_index forward_index::from_inverted_index(const std::string &input_basena
                                                  size_t             min_len,
                                                  bool               use_compression) {
     binary_collection coll((input_basename + ".docs").c_str());
-    std::cout << use_compression << std::endl;
 
     auto firstseq = *coll.begin();
     if (firstseq.size() != 1) {

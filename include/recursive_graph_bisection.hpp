@@ -62,6 +62,12 @@ class precomputed_moves_t {
             precompute_moves_recursive(n1, degree_limit);
             precompute_moves_recursive(n2, degree_limit);
         }
+        key = key_type(n2, n1);
+        pos = m_values.find(key);
+        if (pos == m_values.end()) {
+            auto pre = precompute_moves(log2(n1), log2(n2), degree_limit);
+            m_values.insert({key, std::move(pre)});
+        }
     }
 
     std::vector<std::vector<uint32_t>> precompute_moves(double   logn1,
@@ -81,7 +87,7 @@ class precomputed_moves_t {
     std::map<key_type, mapping_type> m_values;
 };
 
-const precomputed_moves_t precomputed_moves(100000, 1024);
+precomputed_moves_t precomputed_moves;
 
 } // namespace bp
 
@@ -199,21 +205,17 @@ void compute_move_gains_precompute(document_range<Iter> &     range,
                                    const std::ptrdiff_t       to_n,
                                    const std::vector<size_t> &from_lex,
                                    const std::vector<size_t> &to_lex) {
-    const auto logn1 = log2(from_n);
-    const auto logn2 = log2(to_n);
-
     const auto& precomputed = bp::precomputed_moves[std::make_pair(from_n, to_n)];
     assert(not precomputed.empty());
     auto compute_document_gain = [&](auto &d) {
         double gain = 0.0;
-        for (const auto &t : range.terms(d)) {
-            auto from_deg = from_lex[t];
-            auto to_deg   = to_lex[t];
-            gain += precomputed[from_deg][to_deg];
-        }
+        auto terms = range.terms(d);
+        std::for_each(std::execution::unseq, terms.begin(), terms.end(), [&](const auto&t) {
+            gain += precomputed[from_lex[t]][to_lex[t]];
+        });
         range.gain(d) = gain;
     };
-    std::for_each(std::execution::par_unseq, range.begin(), range.end(), compute_document_gain);
+    std::for_each(range.begin(), range.end(), compute_document_gain);
 }
 
 template <typename Iter>
@@ -267,10 +269,10 @@ void compute_move_gains(document_range<Iter> &     range,
     std::for_each(range.begin(), range.end(), compute_document_gain);
 }
 
-template <class Iterator>
+template <class Iterator, class GainF>
 void compute_gains(document_partition<Iterator> &partition,
                    const degree_map_pair &       degrees,
-                   gain_function_t<Iterator>     gain_function) {
+                   GainF     gain_function) {
 
     auto n1 = partition.left.size();
     auto n2 = partition.right.size();
@@ -301,9 +303,9 @@ void swap(document_partition<Iterator> &partition, degree_map_pair &degrees) {
     }
 }
 
-template <class Iterator>
+template <class Iterator, class GainF>
 void process_partition(document_partition<Iterator> &partition,
-                       gain_function_t<Iterator>     gain_function) {
+                       GainF     gain_function) {
 
     auto degrees = compute_degrees(partition);
     for (int iteration = 0; iteration < 20; ++iteration) {
@@ -326,17 +328,19 @@ void process_partition(document_partition<Iterator> &partition,
 }
 
 template <class Iterator>
-void recursive_graph_bisection(document_range<Iterator> documents, int depth, progress &p) {
+void recursive_graph_bisection(document_range<Iterator> documents, int depth, int prelim, progress &p) {
     auto partition = documents.split();
     if (documents.size() >= 1024) {
         process_partition(partition, compute_move_gains_caching<Iterator>);
+    } else if (documents.size() <= prelim) {
+        process_partition(partition, compute_move_gains_precompute<Iterator>);
     } else {
         process_partition(partition, compute_move_gains<Iterator>);
     }
     p.update(documents.size());
     if (depth > 1 && documents.size() > 2) {
-        tbb::parallel_invoke([&] { recursive_graph_bisection(partition.left, depth - 1, p); },
-                             [&] { recursive_graph_bisection(partition.right, depth - 1, p); });
+        tbb::parallel_invoke([&] { recursive_graph_bisection(partition.left, depth - 1, prelim, p); },
+                             [&] { recursive_graph_bisection(partition.right, depth - 1, prelim, p); });
     } else {
         std::sort(partition.left.begin(), partition.left.end());
         std::sort(partition.right.begin(), partition.right.end());

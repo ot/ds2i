@@ -15,6 +15,7 @@ int main(int argc, char const *argv[]) {
     size_t      depth   = 0;
     size_t      threads = 4;
     bool        nogb    = false;
+    size_t      prelim  = 0;
 
     CLI::App app{"Recursive graph bisection algorithm used for inverted indexed reordering."};
     app.add_option("-c,--collection", input_basename, "Collection basename")->required();
@@ -24,6 +25,7 @@ int main(int argc, char const *argv[]) {
     app.add_option("-m,--min-len", min_len, "Minimum list threshold");
     app.add_option("-d,--depth", depth, "Recursion depth");
     app.add_option("-t,--threads", threads, "Thread count");
+    app.add_option("--prelim", prelim, "Precomputing limit");
     app.add_flag("--nogb", nogb, "No VarIntGB compression in forward index");
     CLI11_PARSE(app, argc, argv);
 
@@ -51,8 +53,8 @@ int main(int argc, char const *argv[]) {
         document_range<std::vector<uint32_t>::iterator> initial_range(
             documents.begin(), documents.end(), fwd, gains);
 
-        //std::cerr << "Precomputing move gains..." << std::endl;
-        //bp::precomputed_moves = bp::precomputed_moves_t(documents.size(), 1024);
+        std::cerr << "Precomputing move gains..." << std::endl;
+        bp::precomputed_moves = bp::precomputed_moves_t(documents.size(), prelim);
         if (depth == 0u) {
             depth = static_cast<size_t>(std::log2(fwd.size()));
         }
@@ -60,7 +62,7 @@ int main(int argc, char const *argv[]) {
         {
             ds2i::progress bp_progress("Graph bisection", initial_range.size() * depth);
             bp_progress.update(0);
-            recursive_graph_bisection(initial_range, depth, bp_progress);
+            recursive_graph_bisection(initial_range, depth, prelim, bp_progress);
         }
 
         auto mapping = get_mapping(documents);
