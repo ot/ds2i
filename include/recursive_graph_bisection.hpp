@@ -5,13 +5,9 @@
 #include <iterator>
 #include <vector>
 
-#include <pstl/algorithm>
-#include <pstl/execution>
+#include "pstl/algorithm"
+#include "pstl/execution"
 
-#include "binary_collection.hpp"
-#include "binary_freq_collection.hpp"
-#include "codec/block_codecs.hpp"
-#include "codec/varintgb.hpp"
 #include "util/index_build_utils.hpp"
 #include "util/log.hpp"
 #include "util/progress.hpp"
