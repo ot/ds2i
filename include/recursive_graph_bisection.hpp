@@ -227,7 +227,7 @@ void compute_move_gains_precompute(document_range<Iter> &     range,
     std::for_each(range.begin(), range.end(), compute_document_gain);
 }
 
-template <typename Iter>
+template <bool isLikelyCached = true,typename Iter>
 void compute_move_gains_caching(document_range<Iter> &     range,
                                 const std::ptrdiff_t       from_n,
                                 const std::ptrdiff_t       to_n,
@@ -240,13 +240,24 @@ void compute_move_gains_caching(document_range<Iter> &     range,
     thread_local std::vector<cache_entry<double>> gain_cache(from_lex.size());
     auto                                          compute_document_gain = [&](auto &d) {
         double gain = 0.0;
-        for (const auto &t : range.terms(d)) {
-            if (not gain_cache[t].has_value()) {
-                auto &from_deg = from_lex[t];
-                auto &to_deg   = to_lex[t];
-                auto  term_gain = bp::expb(logn1, logn2, from_deg, to_deg) -
-                                 bp::expb(logn1, logn2, from_deg - 1, to_deg + 1);
-                gain_cache[t] = term_gain;
+        auto terms = range.terms(d);
+        for (const auto &t : terms) {
+            if constexpr (isLikelyCached){
+                if (DS2I_UNLIKELY(not gain_cache[t].has_value())) {
+                    auto &from_deg = from_lex[t];
+                    auto &to_deg   = to_lex[t];
+                    auto  term_gain = bp::expb(logn1, logn2, from_deg, to_deg) -
+                                     bp::expb(logn1, logn2, from_deg - 1, to_deg + 1);
+                    gain_cache[t] = term_gain;
+                }
+            } else{
+                if (DS2I_LIKELY(not gain_cache[t].has_value())) {
+                    auto &from_deg = from_lex[t];
+                    auto &to_deg   = to_lex[t];
+                    auto  term_gain = bp::expb(logn1, logn2, from_deg, to_deg) -
+                                     bp::expb(logn1, logn2, from_deg - 1, to_deg + 1);
+                    gain_cache[t] = term_gain;
+                }
             }
             gain += gain_cache[t].value();
         }
@@ -313,14 +324,21 @@ void swap(document_partition<Iterator> &partition, degree_map_pair &degrees) {
         if (DS2I_UNLIKELY(left.gain(*lit) + right.gain(*rit) <= 0)) {
             break;
         }
-        for (auto &term : left.terms(*lit)) {
-            degrees.left[term]--;
-            degrees.right[term]++;
+        {
+            auto terms = left.terms(*lit);
+            for (auto &term : terms) {
+                degrees.left[term]--;
+                degrees.right[term]++;
+            }
         }
-        for (auto &term : right.terms(*rit)) {
-            degrees.left[term]++;
-            degrees.right[term]--;
+        {
+            auto terms = right.terms(*rit);
+            for (auto &term : terms) {
+                degrees.left[term]++;
+                degrees.right[term]--;
+            }
         }
+
         std::iter_swap(lit, rit);
     }
 }
@@ -364,17 +382,17 @@ void recursive_graph_bisection(document_range<Iterator> documents,
     if (cache_depth >= 1) {
         if (parallel_depth > 0) {
             // std::cout << depth << " " << "compute_move_gains_caching" << std::endl;
-            process_partition(partition, compute_move_gains_caching<Iterator>);
+            process_partition(partition, compute_move_gains_caching<true, Iterator>);
         } else {
-            process_partition<false>(partition, compute_move_gains_caching<Iterator>);
+            process_partition<false>(partition, compute_move_gains_caching<true, Iterator>);
         }
         --cache_depth;
     } else {
         if (parallel_depth > 0) {
             // std::cout << depth << " " << "compute_move_gains" << std::endl;
-            process_partition(partition, compute_move_gains<true, Iterator>);
+            process_partition(partition, compute_move_gains_caching<false, Iterator>);
         } else {
-            process_partition<false>(partition, compute_move_gains<false, Iterator>);
+            process_partition<false>(partition, compute_move_gains_caching<false, Iterator>);
         }
         // process_partition(partition, compute_move_gains_precompute<Iterator>);
     }
