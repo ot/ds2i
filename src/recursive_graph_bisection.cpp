@@ -37,6 +37,8 @@ int main(int argc, char const *argv[]) {
 
     tbb::task_scheduler_init init(threads);
 
+
+
     using namespace ds2i;
 
     forward_index fwd =
@@ -59,12 +61,15 @@ int main(int argc, char const *argv[]) {
         if (depth == 0u) {
             depth = static_cast<size_t>(std::log2(fwd.size()) - 5);
         }
-        std::cerr << "Using max depth " << depth << std::endl;
+        std::cerr << "Using max depth: " << depth << std::endl;
+        std::cout << "Number of threads: " << threads << std::endl;
+        std::cout << "Minimum list threshold: " << min_len << std::endl;
+
         {
             size_t parallel_depth = std::log2(threads);
             ds2i::progress bp_progress("Graph bisection", initial_range.size() * depth);
             bp_progress.update(0);
-            recursive_graph_bisection(initial_range, depth, parallel_depth, depth-5, bp_progress);
+            recursive_graph_bisection(initial_range, depth, parallel_depth, depth-8, bp_progress);
         }
 
         auto mapping = get_mapping(documents);
