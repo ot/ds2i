@@ -28,64 +28,6 @@ DS2I_ALWAYSINLINE double expb(double logn1, double logn2, size_t deg1, size_t de
     return a[3] - a[2] + a[1] - a[0];
 };
 
-class precomputed_moves_t {
-    using key_type     = std::pair<uint32_t, uint32_t>;
-    using mapping_type = std::vector<std::vector<uint32_t>>;
-
-   public:
-    precomputed_moves_t()                                = default;
-    precomputed_moves_t(const precomputed_moves_t &)     = default;
-    precomputed_moves_t(precomputed_moves_t &&) noexcept = default;
-    precomputed_moves_t &operator=(const precomputed_moves_t &) = default;
-    precomputed_moves_t &operator=(precomputed_moves_t &&) noexcept = default;
-    precomputed_moves_t(uint32_t size, uint32_t degree_limit) {
-        precompute_moves_recursive(size, degree_limit);
-    };
-
-    const mapping_type &operator[](const key_type &key) const {
-        auto pos = m_values.find(key);
-        assert(pos != m_values.end());
-        return pos->second;
-    }
-
-   private:
-    void precompute_moves_recursive(uint32_t n, int degree_limit) {
-        uint32_t n1 = n / 2;
-        uint32_t n2 = (n + 1) / 2;
-        key_type key(n1, n2);
-        auto     pos = m_values.find(key);
-        if (pos == m_values.end()) {
-            auto pre = precompute_moves(log2(n1), log2(n2), degree_limit);
-            m_values.insert({key, std::move(pre)});
-            precompute_moves_recursive(n1, degree_limit);
-            precompute_moves_recursive(n2, degree_limit);
-        }
-        key = key_type(n2, n1);
-        pos = m_values.find(key);
-        if (pos == m_values.end()) {
-            auto pre = precompute_moves(log2(n1), log2(n2), degree_limit);
-            m_values.insert({key, std::move(pre)});
-        }
-    }
-
-    std::vector<std::vector<uint32_t>> precompute_moves(double   logn1,
-                                                        double   logn2,
-                                                        uint32_t upper_bound) {
-        std::vector<std::vector<uint32_t>> precomputed;
-        for (uint32_t i = 0; i < upper_bound; i++) {
-            precomputed.emplace_back(upper_bound);
-            for (uint32_t j = 0; j < upper_bound; j++) {
-                precomputed[i][j] = expb(logn1, logn2, i, j);
-            }
-        }
-        return precomputed;
-    }
-
-    std::map<key_type, mapping_type> m_values;
-};
-
-precomputed_moves_t precomputed_moves;
-
 } // namespace bp
 
 struct degree_map_pair {
@@ -208,25 +150,6 @@ class cache_entry {
     size_t m_generation;
 };
 
-template <typename Iter>
-void compute_move_gains_precompute(document_range<Iter> &     range,
-                                   const std::ptrdiff_t       from_n,
-                                   const std::ptrdiff_t       to_n,
-                                   const std::vector<size_t> &from_lex,
-                                   const std::vector<size_t> &to_lex) {
-    const auto &precomputed = bp::precomputed_moves[std::make_pair(from_n, to_n)];
-    assert(not precomputed.empty());
-    auto compute_document_gain = [&](auto &d) {
-        double gain  = 0.0;
-        auto   terms = range.terms(d);
-        std::for_each(std::execution::unseq, terms.begin(), terms.end(), [&](const auto &t) {
-            gain += precomputed[from_lex[t]][to_lex[t]];
-        });
-        range.gain(d) = gain;
-    };
-    std::for_each(range.begin(), range.end(), compute_document_gain);
-}
-
 template <bool isLikelyCached = true,typename Iter>
 void compute_move_gains_caching(document_range<Iter> &     range,
                                 const std::ptrdiff_t       from_n,
@@ -266,34 +189,6 @@ void compute_move_gains_caching(document_range<Iter> &     range,
     std::for_each(range.begin(), range.end(), compute_document_gain);
 }
 
-template <bool isParallel = true, typename Iter>
-void compute_move_gains(document_range<Iter> &     range,
-                        const std::ptrdiff_t       from_n,
-                        const std::ptrdiff_t       to_n,
-                        const std::vector<size_t> &from_lex,
-                        const std::vector<size_t> &to_lex) {
-    const auto logn1 = log2(from_n);
-    const auto logn2 = log2(to_n);
-
-    auto compute_document_gain = [&](const auto &d) {
-        double gain  = 0.0;
-        auto   terms = range.terms(d);
-        for (const auto &t : terms) {
-            auto &from_deg  = from_lex[t];
-            auto &to_deg    = to_lex[t];
-            auto  term_gain = bp::expb(logn1, logn2, from_deg, to_deg) -
-                             bp::expb(logn1, logn2, from_deg - 1, to_deg + 1);
-            gain += term_gain;
-        }
-        range.gain(d) = gain;
-    };
-    if constexpr (isParallel) {
-        std::for_each(std::execution::par_unseq, range.begin(), range.end(), compute_document_gain);
-    } else {
-        std::for_each(std::execution::par_unseq, range.begin(), range.end(), compute_document_gain);
-    }
-}
-
 template <bool isParallel = true, class Iterator, class GainF>
 void compute_gains(document_partition<Iterator> &partition,
                    const degree_map_pair &       degrees,
@@ -309,9 +204,6 @@ void compute_gains(document_partition<Iterator> &partition,
         gain_function(partition.left, n1, n2, degrees.left, degrees.right);
         gain_function(partition.right, n2, n1, degrees.right, degrees.left);
     }
-    // tbb::parallel_invoke(
-    //     [&] { gain_function(partition.left, n1, n2, degrees.left, degrees.right); },
-    //     [&] { gain_function(partition.right, n2, n1, degrees.right, degrees.left); });
 }
 
 template <class Iterator>
@@ -380,26 +272,23 @@ void recursive_graph_bisection(document_range<Iterator> documents,
                                progress &               p) {
     auto partition = documents.split();
     if (cache_depth >= 1) {
-        if (parallel_depth > 0) {
-            // std::cout << depth << " " << "compute_move_gains_caching" << std::endl;
+        // if (parallel_depth > 0) {
             process_partition(partition, compute_move_gains_caching<true, Iterator>);
-        } else {
-            process_partition<false>(partition, compute_move_gains_caching<true, Iterator>);
-        }
+        // } else {
+        //     process_partition<false>(partition, compute_move_gains_caching<true, Iterator>);
+        // }
         --cache_depth;
     } else {
-        if (parallel_depth > 0) {
-            // std::cout << depth << " " << "compute_move_gains" << std::endl;
+        // if (parallel_depth > 0) {
             process_partition(partition, compute_move_gains_caching<false, Iterator>);
-        } else {
-            process_partition<false>(partition, compute_move_gains_caching<false, Iterator>);
-        }
-        // process_partition(partition, compute_move_gains_precompute<Iterator>);
+        // } else {
+        //     process_partition<false>(partition, compute_move_gains_caching<false, Iterator>);
+        // }
     }
 
     p.update(documents.size());
     if (depth > 1 && documents.size() > 2) {
-        if (parallel_depth > 0) {
+        // if (parallel_depth > 0) {
             tbb::parallel_invoke(
                 [&] {
                     recursive_graph_bisection(
@@ -410,10 +299,10 @@ void recursive_graph_bisection(document_range<Iterator> documents,
                         partition.right, depth - 1, parallel_depth - 1, cache_depth, p);
                 });
 
-        } else {
-            recursive_graph_bisection(partition.left, depth - 1, parallel_depth, cache_depth, p);
-            recursive_graph_bisection(partition.right, depth - 1, parallel_depth, cache_depth, p);
-        }
+        // } else {
+        //     recursive_graph_bisection(partition.left, depth - 1, parallel_depth, cache_depth, p);
+        //     recursive_graph_bisection(partition.right, depth - 1, parallel_depth, cache_depth, p);
+        // }
     } else {
         std::sort(partition.left.begin(), partition.left.end());
         std::sort(partition.right.begin(), partition.right.end());

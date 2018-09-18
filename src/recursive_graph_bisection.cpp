@@ -54,10 +54,8 @@ int main(int argc, char const *argv[]) {
         document_range<std::vector<uint32_t>::iterator> initial_range(
             documents.begin(), documents.end(), fwd, gains);
 
-        std::cerr << "Precomputing move gains..." << std::endl;
-        bp::precomputed_moves = bp::precomputed_moves_t(documents.size(), prelim);
         if (depth == 0u) {
-            depth = static_cast<size_t>(std::log2(fwd.size()) );
+            depth = static_cast<size_t>(std::log2(fwd.size()) - 5 );
         }
         std::cerr << "Using max depth " << depth << std::endl;
         std::cout << "Number of threads: " << threads << std::endl;
