@@ -1,3 +1,4 @@
+#include <thread>
 #include "CLI/CLI.hpp"
 #include "pstl/execution"
 #include "tbb/task_scheduler_init.h"
@@ -13,7 +14,7 @@ int main(int argc, char const *argv[]) {
     std::string output_fwd;
     size_t      min_len = 0;
     size_t      depth   = 0;
-    size_t      threads = 4;
+    size_t      threads = std::thread::hardware_concurrency();
     bool        nogb    = false;
     size_t      prelim  = 0;
 
@@ -56,13 +57,14 @@ int main(int argc, char const *argv[]) {
         std::cerr << "Precomputing move gains..." << std::endl;
         bp::precomputed_moves = bp::precomputed_moves_t(documents.size(), prelim);
         if (depth == 0u) {
-            depth = static_cast<size_t>(std::log2(fwd.size()));
+            depth = static_cast<size_t>(std::log2(fwd.size()) - 5);
         }
         std::cerr << "Using max depth " << depth << std::endl;
         {
+            size_t parallel_depth = std::log2(threads);
             ds2i::progress bp_progress("Graph bisection", initial_range.size() * depth);
             bp_progress.update(0);
-            recursive_graph_bisection(initial_range, depth, prelim, bp_progress);
+            recursive_graph_bisection(initial_range, depth, parallel_depth, depth-5, bp_progress);
         }
 
         auto mapping = get_mapping(documents);

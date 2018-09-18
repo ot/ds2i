@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iterator>
 #include <vector>
+#include <thread>
 
 #include "pstl/algorithm"
 #include "pstl/execution"
@@ -14,7 +15,7 @@
 #include "forward_index.hpp"
 
 namespace ds2i {
-const Log2<1024> log2;
+const Log2<4096> log2;
 
 namespace bp {
 
@@ -151,23 +152,35 @@ auto get_mapping = [](const auto &collection) {
     return mapping;
 };
 
-template <class Iterator>
+template <bool isParallel = true, class Iterator>
 std::vector<size_t> compute_degrees(document_range<Iterator> &range) {
     std::vector<size_t> deg_map(range.term_count());
     for (const auto &document : range) {
-        for (const auto &term : range.terms(document)) {
-            deg_map[term] += 1;
+        auto terms = range.terms(document);
+        auto deg_map_inc = [&](const auto&t) {
+            deg_map[t] += 1;
+        };
+        if constexpr(isParallel){
+            std::for_each(std::execution::par_unseq, terms.begin(), terms.end(), deg_map_inc);
+        } else {
+            std::for_each(std::execution::unseq, terms.begin(), terms.end(), deg_map_inc);
         }
     }
     return deg_map;
 }
 
-template <class Iterator>
+template <bool isParallel = true, class Iterator>
 degree_map_pair compute_degrees(document_partition<Iterator> &partition) {
     std::vector<size_t> left_degree;
     std::vector<size_t> right_degree;
-    tbb::parallel_invoke([&] { left_degree = compute_degrees(partition.left); },
-                         [&] { right_degree = compute_degrees(partition.right); });
+    if constexpr(isParallel){
+        std::thread t ( [&] {left_degree = compute_degrees(partition.left); });
+        right_degree = compute_degrees(partition.right);
+        t.join();
+    } else {
+        left_degree = compute_degrees<false>(partition.left);
+        right_degree = compute_degrees<false>(partition.right);
+    }
     return degree_map_pair{left_degree, right_degree};
 }
 
@@ -228,8 +241,8 @@ void compute_move_gains_caching(document_range<Iter> &     range,
         double gain = 0.0;
         for (const auto &t : range.terms(d)) {
             if (not gain_cache[t].has_value()) {
-                auto from_deg = from_lex[t];
-                auto to_deg   = to_lex[t];
+                auto &from_deg = from_lex[t];
+                auto &to_deg   = to_lex[t];
                 auto term_gain = bp::expb(logn1, logn2, from_deg, to_deg) -
                                  bp::expb(logn1, logn2, from_deg - 1, to_deg + 1);
                 gain_cache[t] = term_gain;
@@ -241,7 +254,7 @@ void compute_move_gains_caching(document_range<Iter> &     range,
     std::for_each(range.begin(), range.end(), compute_document_gain);
 }
 
-template <typename Iter>
+template <bool isParallel = true, typename Iter>
 void compute_move_gains(document_range<Iter> &     range,
                         const std::ptrdiff_t       from_n,
                         const std::ptrdiff_t       to_n,
@@ -254,27 +267,41 @@ void compute_move_gains(document_range<Iter> &     range,
         double gain = 0.0;
         auto   terms = range.terms(d);
         for (const auto &t : terms) {
-            auto from_deg = from_lex[t];
-            auto to_deg   = to_lex[t];
+            auto &from_deg = from_lex[t];
+            auto &to_deg   = to_lex[t];
             auto term_gain = bp::expb(logn1, logn2, from_deg, to_deg) -
                              bp::expb(logn1, logn2, from_deg - 1, to_deg + 1);
             gain += term_gain;
         }
         range.gain(d) = gain;
     };
-    std::for_each(range.begin(), range.end(), compute_document_gain);
+    if constexpr(isParallel){
+        std::for_each(std::execution::par_unseq, range.begin(), range.end(), compute_document_gain);
+    } else {
+        std::for_each(std::execution::par_unseq, range.begin(), range.end(), compute_document_gain);
+    }
 }
 
-template <class Iterator, class GainF>
+template <bool isParallel = true, class Iterator, class GainF>
 void compute_gains(document_partition<Iterator> &partition,
                    const degree_map_pair &       degrees,
                    GainF     gain_function) {
 
     auto n1 = partition.left.size();
     auto n2 = partition.right.size();
-    tbb::parallel_invoke(
-        [&] { gain_function(partition.left, n1, n2, degrees.left, degrees.right); },
-        [&] { gain_function(partition.right, n2, n1, degrees.right, degrees.left); });
+    if constexpr(isParallel){
+    std::thread t ([&] {
+        gain_function(partition.left, n1, n2, degrees.left, degrees.right);
+    });
+    gain_function(partition.right, n2, n1, degrees.right, degrees.left);
+    t.join();
+    } else {
+        gain_function(partition.left, n1, n2, degrees.left, degrees.right);
+        gain_function(partition.right, n2, n1, degrees.right, degrees.left);
+    }
+    // tbb::parallel_invoke(
+    //     [&] { gain_function(partition.left, n1, n2, degrees.left, degrees.right); },
+    //     [&] { gain_function(partition.right, n2, n1, degrees.right, degrees.left); });
 }
 
 template <class Iterator>
@@ -299,44 +326,77 @@ void swap(document_partition<Iterator> &partition, degree_map_pair &degrees) {
     }
 }
 
-template <class Iterator, class GainF>
+template < bool isParallel = true, class Iterator, class GainF>
 void process_partition(document_partition<Iterator> &partition,
                        GainF     gain_function) {
 
     auto degrees = compute_degrees(partition);
     for (int iteration = 0; iteration < 20; ++iteration) {
-        compute_gains(partition, degrees, gain_function);
-        tbb::parallel_invoke(
-            [&] {
+        if constexpr(isParallel){
+            compute_gains(partition, degrees, gain_function);
+            std::thread t ([&] {
                 std::sort(std::execution::par_unseq,
                           partition.left.begin(),
                           partition.left.end(),
                           partition.left.by_gain());
-            },
-            [&] {
-                std::sort(std::execution::par_unseq,
+            });
+            std::sort(std::execution::par_unseq,
                           partition.right.begin(),
                           partition.right.end(),
                           partition.right.by_gain());
-            });
+            t.join();
+        } else {
+            compute_gains<false>(partition, degrees, gain_function);
+            std::sort(
+                          partition.left.begin(),
+                          partition.left.end(),
+                          partition.left.by_gain());
+            std::sort(
+                          partition.right.begin(),
+                          partition.right.end(),
+                          partition.right.by_gain());
+        }
         swap(partition, degrees);
     }
 }
 
 template <class Iterator>
-void recursive_graph_bisection(document_range<Iterator> documents, int depth, int prelim, progress &p) {
+void recursive_graph_bisection(document_range<Iterator> documents, size_t depth, size_t parallel_depth, size_t cache_depth, progress &p) {
     auto partition = documents.split();
-    if (documents.size() >= 1024) {
-        process_partition(partition, compute_move_gains_caching<Iterator>);
-    } else if (documents.size() <= prelim) {
-        process_partition(partition, compute_move_gains_precompute<Iterator>);
+    if(cache_depth >= 1) {
+        if(parallel_depth > 1) {
+            std::cout << depth << " " << "compute_move_gains_caching" << std::endl;
+            process_partition(partition, compute_move_gains_caching<Iterator>);
+        } else {
+            process_partition<false>(partition, compute_move_gains_caching<Iterator>);
+        }
+        --cache_depth;
     } else {
-        process_partition(partition, compute_move_gains<Iterator>);
+        if(parallel_depth > 1) {
+            std::cout << depth << " " << "compute_move_gains" << std::endl;
+            process_partition(partition, compute_move_gains<true, Iterator>);
+        } else {
+            process_partition<false>(partition, compute_move_gains<false, Iterator>);
+        }
+    // process_partition(partition, compute_move_gains_precompute<Iterator>);
     }
+
+
+
     p.update(documents.size());
     if (depth > 1 && documents.size() > 2) {
-        tbb::parallel_invoke([&] { recursive_graph_bisection(partition.left, depth - 1, prelim, p); },
-                             [&] { recursive_graph_bisection(partition.right, depth - 1, prelim, p); });
+        if(parallel_depth > 1) {
+            std::thread t ([&] { recursive_graph_bisection(partition.left, depth - 1, parallel_depth - 1,cache_depth, p); });
+            recursive_graph_bisection(partition.right, depth - 1, parallel_depth - 1, cache_depth, p);
+            t.join();
+
+        // tbb::parallel_invoke([&] { recursive_graph_bisection(partition.left, depth - 1, parallel_depth - 1,cache_depth-1, p); },
+        //                      [&] { recursive_graph_bisection(partition.right, depth - 1, parallel_depth - 1, cache_depth-1, p); });
+        //
+        } else {
+             recursive_graph_bisection(partition.left, depth - 1, parallel_depth ,cache_depth,  p);
+             recursive_graph_bisection(partition.right, depth - 1, parallel_depth ,cache_depth,  p);
+        }
     } else {
         std::sort(partition.left.begin(), partition.left.end());
         std::sort(partition.right.begin(), partition.right.end());
