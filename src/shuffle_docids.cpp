@@ -28,7 +28,7 @@ int main(int argc, const char** argv)
 
     using namespace ds2i;
 
-    if (argc < 3 && argc != 4) {
+    if (argc != 3 && argc != 4) {
         std::cerr << "Usage: " << argv[0]
                   << " <collection basename> <output basename> [ordering file]"
                   << std::endl
