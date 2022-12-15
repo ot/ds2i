@@ -92,7 +92,7 @@ namespace ds2i {
                                               params);
                     endpoints.push_back(bv_sequences.size());
                     upper_bounds.push_back(upper_bound);
-                    cur_base = upper_bound + 1;
+                    cur_base = upper_bound;
                 }
 
                 succinct::bit_vector_builder bv_sizes;
@@ -316,7 +316,7 @@ namespace ds2i {
 
                 auto ub_it = m_upper_bounds.move(partition + 1);
                 m_cur_upper_bound = ub_it.second;
-                m_cur_base = m_upper_bounds.prev_value() + (partition ? 1 : 0);
+                m_cur_base = m_upper_bounds.prev_value();
 
                 m_partition_enum = base_sequence_enumerator
                     (*m_bv, partition_begin,
